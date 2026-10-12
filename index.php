@@ -30,22 +30,32 @@ function get_real_ip() {
 }
 
 function parse_isp($isp_name, $org_name) {$combined = $isp_name . ' ' .$org_name;
-    if (stripos($combined, 'Mobilis') !== false or stripos($combined, 'ATM') !== false or stripos($combined, 'Telecom Mobilis') !== false) return 'موبيليس (Mobilis)';
-    if (stripos($combined, 'Djezzy') !== false or stripos($combined, 'Optimum Telecom') !== false) return 'جازي (Djezzy)';
-    if (stripos($combined, 'Ooredoo') !== false or stripos($combined, 'Wataniya') !== false) return 'أوريدو (Ooredoo)';
-    if (stripos($combined, 'Algérie Télécom') !== false or stripos($combined, 'Algerie Telecom') !== false or stripos($combined, 'AT') !== false) return 'اتصالات الجزائر (Algérie Télécom)';
+    if (stripos($combined, 'Mobilis') !== false or stripos($combined, 'ATM') !== false or stripos($combined, 'Telecom Mobilis') !== false) {
+        return 'موبيليس (Mobilis)';
+    }
+    if (stripos($combined, 'Djezzy') !== false or stripos($combined, 'Optimum Telecom') !== false) {
+        return 'جازي (Djezzy)';
+    }
+    if (stripos($combined, 'Ooredoo') !== false or stripos($combined, 'Wataniya') !== false) {
+        return 'أوريدو (Ooredoo)';
+    }
+    if (stripos($combined, 'Algérie Télécom') !== false or stripos($combined, 'Algerie Telecom') !== false or stripos($combined, 'AT') !== false) {
+        return 'اتصالات الجزائر (Algérie Télécom)';
+    }
     return trim($isp_name) ?: 'غير معروف';
 }
 
 function get_device_type($ua) {
-    if (stripos($ua, 'Samsung') !== false)$brand = 'سامسونج (Samsung)';
-    elseif (stripos($ua, 'iPhone') !== false)$brand = 'آيفون (iPhone)';
-    elseif (stripos($ua, 'Huawei') !== false)$brand = 'هواوي (Huawei)';
-    elseif (stripos($ua, 'Xiaomi') !== false or stripos($ua, 'Redmi') !== false)$brand = 'شاومي (Xiaomi)';
-    elseif (stripos($ua, 'Oppo') !== false)$brand = 'أوبو (Oppo)';
-    elseif (stripos($ua, 'Vivo') !== false)$brand = 'فيفو (Vivo)';
-    elseif (stripos($ua, 'Realme') !== false)$brand = 'ريلمي (Realme)';
-    else $brand = 'جهاز ذكي';
+    if (stripos($ua, 'Samsung') !== false) {$brand = 'سامسونج (Samsung)';
+    } elseif (stripos($ua, 'iPhone') !== false) {$brand = 'آيفون (iPhone)';
+    } elseif (stripos($ua, 'Huawei') !== false) {$brand = 'هواوي (Huawei)';
+    } elseif (stripos($ua, 'Xiaomi') !== false or stripos($ua, 'Redmi') !== false) {$brand = 'شاومي (Xiaomi)';
+    } elseif (stripos($ua, 'Oppo') !== false) {$brand = 'أوبو (Oppo)';
+    } elseif (stripos($ua, 'Vivo') !== false) {$brand = 'فيفو (Vivo)';
+    } elseif (stripos($ua, 'Realme') !== false) {$brand = 'ريلمي (Realme)';
+    } else {
+        $brand = 'جهاز ذكي';
+    }
 
     if (stripos($ua, 'Android') !== false) {
         return $brand . ' - أندرويد';
@@ -91,9 +101,4 @@ if (isset($_GET['r'])) {
         $screen =$_GET['screen'] ?? 'غير متوفر';
         $tz =$_GET['tz'] ?? 'غير متوفر';
 
-        $logStmt =$db->prepare("INSERT INTO logs (code, ip, country, city, lat, lon, isp, device_info, screen_res, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $logStmt->execute([$code,$ip, $geo['country'],$geo['city'], $geo['lat'],$geo['lon'], $geo['isp'],$device, $screen,$tz]);
-
-        header("Location: " . $target);
-        exit();
-    } else
+        
