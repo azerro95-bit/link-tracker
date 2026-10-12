@@ -12,6 +12,8 @@ $db->exec("CREATE TABLE IF NOT EXISTS logs (
     ip TEXT, 
     country TEXT, 
     city TEXT, 
+    lat TEXT, 
+    lon TEXT, 
     isp TEXT, 
     device_info TEXT, 
     screen_res TEXT, 
@@ -27,13 +29,12 @@ function get_real_ip() {
     return $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
 }
 
-function parse_isp($isp_name) {
-    $isp_name = trim($isp_name);
-    if (stripos($isp_name, 'Mobilis') !== false or stripos($isp_name, 'ATM') !== false) return 'موبيليس (Mobilis)';
-    if (stripos($isp_name, 'Djezzy') !== false or stripos($isp_name, 'Optimum Telecom') !== false) return 'جازي (Djezzy)';
-    if (stripos($isp_name, 'Ooredoo') !== false or stripos($isp_name, 'Wataniya') !== false) return 'أوريدو (Ooredoo)';
-    if (stripos($isp_name, 'Algérie Télécom') !== false or stripos($isp_name, 'Algerie Telecom') !== false or stripos($isp_name, 'AT') !== false) return 'اتصالات الجزائر (Algérie Télécom)';
-    return $isp_name ?: 'غير معروف';
+function parse_isp($isp_name, $org_name) {$combined = $isp_name . ' ' .$org_name;
+    if (stripos($combined, 'Mobilis') !== false or stripos($combined, 'ATM') !== false or stripos($combined, 'Telecom Mobilis') !== false) return 'موبيليس (Mobilis)';
+    if (stripos($combined, 'Djezzy') !== false or stripos($combined, 'Optimum Telecom') !== false) return 'جازي (Djezzy)';
+    if (stripos($combined, 'Ooredoo') !== false or stripos($combined, 'Wataniya') !== false) return 'أوريدو (Ooredoo)';
+    if (stripos($combined, 'Algérie Télécom') !== false or stripos($combined, 'Algerie Telecom') !== false or stripos($combined, 'AT') !== false) return 'اتصالات الجزائر (Algérie Télécom)';
+    return trim($isp_name) ?: 'غير معروف';
 }
 
 function get_device_type($ua) {
@@ -43,29 +44,30 @@ function get_device_type($ua) {
     } elseif (stripos($ua, 'iPhone') !== false) {
         return 'آيفون (iPhone)';
     } elseif (stripos($ua, 'iPad') !== false) {         return 'آيباد (iPad)';     } elseif (stripos($ua, 'Windows') !== false) {
-        return 'حهاز ويندوز (Windows PC)';
+        return 'حاسوب ويندوز (Windows PC)';
     } elseif (stripos($ua, 'Macintosh') !== false or stripos($ua, 'Mac OS') !== false) {
         return 'حاسوب ماك (Mac)';
     } elseif (stripos($ua, 'Linux') !== false) {
         return 'نظام لينكس (Linux)';
     }
-    return 'جهاز آخر (Unknown Device)';
+    return 'جهاز آخر (Unknown)';
 }
 
 function get_ip_details($ip) {
     if ($ip == '127.0.0.1' or $ip == '::1' or$ip == 'Unknown' or strpos($ip, '10.') === 0 or strpos($ip, '192.168.') === 0) {
-        return ['country' => 'الجزائر (محلي)', 'city' => 'شبكة محلية', 'isp' => 'محلي (Localhost)'];
+        return ['country' => 'الجزائر', 'city' => 'محلي', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'شبكة محلية (Localhost)'];
     }
-    $json = @file_get_contents("http://ip-api.com/json/" . $ip);
+    $json = @file_get_contents("http://ip-api.com/json/" . $ip . "?fields=status,country,city,lat,lon,isp,org");
     $data = json_decode($json, true);
     if ($data and isset($data['status']) and$data['status'] == 'success') {
         return [
             'country' => $data['country'] ?? 'غير معروف',
             'city' => $data['city'] ?? 'غير معروف',
-            'isp' => parse_isp($data['isp'] ?? '')
+            'lat' => $data['lat'] ?? '36.7538',             'lon' =>$data['lon'] ?? '3.0588',
+            'isp' => parse_isp($data['isp'] ?? '',$data['org'] ?? '')
         ];
     }
-    return ['country' => 'غير معروف', 'city' => 'غير معروف', 'isp' => 'غير معروف'];
+    return ['country' => 'غير معروف', 'city' => 'غير معروف', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'غير معروف'];
 }
 
 if (isset($_GET['r'])) {
@@ -81,8 +83,8 @@ if (isset($_GET['r'])) {
         $screen =$_GET['screen'] ?? 'N/A';
         $tz =$_GET['tz'] ?? 'N/A';
 
-        $logStmt =$db->prepare("INSERT INTO logs (code, ip, country, city, isp, device_info, screen_res, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-        $logStmt->execute([$code,$ip, $geo['country'],$geo['city'], $geo['isp'],$device, $screen,$tz]);
+        $logStmt =$db->prepare("INSERT INTO logs (code, ip, country, city, lat, lon, isp, device_info, screen_res, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $logStmt->execute([$code,$ip, $geo['country'],$geo['city'], $geo['lat'],$geo['lon'], $geo['isp'],$device, $screen,$tz]);
 
         header("Location: " . $target);
         exit();
@@ -128,7 +130,7 @@ if (!empty($filter_code)) {
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
         body { background-color: #0b0f19; color: #f3f4f6; padding: 15px; line-height: 1.5; }
-        .container { max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 15px; }
+        .container { max-width: 1050px; margin: 0 auto; display: flex; flex-direction: column; gap: 15px; }
         .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
         .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
         h1 { color: #38bdf8; font-size: 22px; font-weight: 800; }
@@ -147,7 +149,7 @@ if (!empty($filter_code)) {
         button:hover, .btn:hover { background: #0369a1; }
         .result-box { background: #030712; border: 1px solid rgba(56, 189, 248, 0.3); padding: 14px; border-radius: 8px; margin-top: 12px; word-break: break-all; }
         .table-container { overflow-x: auto; margin-top: 12px; border: 1px solid #1f2937; border-radius: 8px; }
-        table { width: 100%; border-collapse: collapse; text-align: right; font-size: 12px; min-width: 800px; }
+        table { width: 100%; border-collapse: collapse; text-align: right; font-size: 12px; min-width: 900px; }
         th { background: #030712; color: #9ca3af; padding: 12px; border-bottom: 1px solid #1f2937; white-space: nowrap; }
         td { padding: 12px; border-bottom: 1px solid #1f2937; color: #e5e7eb; white-space: nowrap; }
         tr:hover { background: rgba(31, 41, 55, 0.4); }
@@ -155,6 +157,8 @@ if (!empty($filter_code)) {
         .ip-text { font-family: monospace; color: #38bdf8; font-weight: bold; font-size: 13px; }
         .copy-btn { background: #374151; padding: 6px 10px; font-size: 11px; border-radius: 4px; cursor: pointer; color: #fff; border: none; }
         .copy-btn.success { background: #059669; }
+        .map-btn { background: #047857; color: #fff; padding: 5px 10px; border-radius: 6px; font-size: 11px; text-decoration: none; font-weight: bold; display: inline-block; }
+        .map-btn:hover { background: #065f46; }
         .link-row { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
     </style>
     <script>
@@ -245,10 +249,10 @@ if (!empty($filter_code)) {
                             <th>#</th>
                             <th>الكود</th>
                             <th>عنوان IP</th>
-                            <th>الدولة / المدينة</th>
+                            <th>الموقع الجغرافي (خريطة جوجل)</th>
                             <th>مزود الخدمة (المتعامل)</th>
                             <th>نوع الجهاز</th>
-                            <th>الشاشة</th>
+                            <th>الشاشة والمنطقة الزمنية</th>
                             <th>الوقت</th>
                         </tr>
                     </thead>
@@ -266,10 +270,13 @@ if (!empty($filter_code)) {
                                     </span>
                                 </td>
                                 <td class="ip-text"><?php echo htmlspecialchars($log['ip']); ?></td>
-                                <td><strong><?php echo htmlspecialchars($log['country']); ?></strong> / <?php echo htmlspecialchars($log['city']); ?></td>
+                                <td>
+                                    <strong><?php echo htmlspecialchars($log['country']); ?> / <?php echo htmlspecialchars($log['city']); ?></strong><br>
+                                    <a class="map-btn" href="https://www.google.com/maps?q=<?php echo $log['lat']; ?>,<?php echo$log['lon']; ?>" target="_blank">📍 عرض على خريطة جوجل</a>
+                                </td>
                                 <td><strong style="color: #38bdf8;"><?php echo htmlspecialchars($log['isp']); ?></strong></td>
                                 <td style="color: #34d399; font-weight: bold;"><?php echo htmlspecialchars($log['device_info']); ?></td>
-                                <td><?php echo htmlspecialchars($log['screen_res']); ?></td>
+                                <td><?php echo htmlspecialchars($log['screen_res']); ?> \vert{} <?php echo htmlspecialchars($log['timezone']); ?></td>
                                 <td style="color: #9ca3af; white-space: nowrap;"><?php echo $log['created_at']; ?></td>
                             </tr>
                             <?php endforeach; ?>
