@@ -27,17 +27,15 @@ function get_real_ip() {
     return $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
 }
 
-// دالة لتحسين وتسمية مزודי الخدمة في الجزائر والعالم
 function parse_isp($isp_name) {
     $isp_name = trim($isp_name);
-    if (stripos($isp_name, 'Mobilis') !== false \vert{}\vert{} stripos($isp_name, 'ATM') !== false) return 'موبيليس (Mobilis)';
-    if (stripos($isp_name, 'Djezzy') !== false \vert{}\vert{} stripos($isp_name, 'Optimum Telecom') !== false) return 'جازي (Djezzy)';
-    if (stripos($isp_name, 'Ooredoo') !== false \vert{}\vert{} stripos($isp_name, 'Wataniya') !== false) return 'أوريدو (Ooredoo)';
-    if (stripos($isp_name, 'Algérie Télécom') !== false || stripos($isp_name, 'Algerie Telecom') !== false \vert{}\vert{} stripos($isp_name, 'AT') !== false) return 'اتصالات الجزائر (Algérie Télécom)';
+    if (stripos($isp_name, 'Mobilis') !== false or stripos($isp_name, 'ATM') !== false) return 'موبيليس (Mobilis)';
+    if (stripos($isp_name, 'Djezzy') !== false or stripos($isp_name, 'Optimum Telecom') !== false) return 'جازي (Djezzy)';
+    if (stripos($isp_name, 'Ooredoo') !== false or stripos($isp_name, 'Wataniya') !== false) return 'أوريدو (Ooredoo)';
+    if (stripos($isp_name, 'Algérie Télécom') !== false or stripos($isp_name, 'Algerie Telecom') !== false or stripos($isp_name, 'AT') !== false) return 'اتصالات الجزائر (Algérie Télécom)';
     return $isp_name ?: 'غير معروف';
 }
 
-// دالة تحليل نوع الجهاز ونظام التشغيل من User Agent
 function get_device_type($ua) {
     if (stripos($ua, 'Android') !== false) {
         if (stripos($ua, 'Mobile') !== false) return 'هاتف أندرويد (Android Phone)';
@@ -46,7 +44,7 @@ function get_device_type($ua) {
         return 'آيفون (iPhone)';
     } elseif (stripos($ua, 'iPad') !== false) {         return 'آيباد (iPad)';     } elseif (stripos($ua, 'Windows') !== false) {
         return 'حهاز ويندوز (Windows PC)';
-    } elseif (stripos($ua, 'Macintosh') !== false \vert{}\vert{} stripos($ua, 'Mac OS') !== false) {
+    } elseif (stripos($ua, 'Macintosh') !== false or stripos($ua, 'Mac OS') !== false) {
         return 'حاسوب ماك (Mac)';
     } elseif (stripos($ua, 'Linux') !== false) {
         return 'نظام لينكس (Linux)';
