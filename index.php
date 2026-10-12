@@ -43,7 +43,6 @@ function get_ip_details($ip) {
     return ['country' => 'غير معروف', 'city' => 'غير معروف', 'isp' => 'غير معروف'];
 }
 
-// 1. إعادة التوجيه وتسجيل الـ IP
 if (isset($_GET['r'])) {
     $code =$_GET['r'];
     $stmt =$db->prepare("SELECT target_url FROM links WHERE code = ?");
@@ -66,7 +65,6 @@ if (isset($_GET['r'])) {
     }
 }
 
-// 2. إنشاء رابط جديد باستخدام الدومين الفعلي ليعمل التتبع 100%
 $generated_link = "";
 $tracking_code = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['create'])) {
@@ -103,32 +101,35 @@ if (!empty($filter_code)) {
     <title>Hello World from azez</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
-        body { background-color: #0b0f19; color: #f3f4f6; padding: 20px; line-height: 1.5; }
-        .container { max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
-        .card { background: #111827; border: 1px solid #1f2937; border-radius: 14px; padding: 24px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3); }
-        .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; }
-        h1 { color: #38bdf8; font-size: 26px; font-weight: 800; }
-        .stats-group { display: flex; gap: 12px; }
-        .stat-box { background: #1f2937; padding: 10px 18px; border-radius: 10px; text-align: center; border: 1px solid #374151; }
-        .stat-box span { display: block; font-size: 11px; color: #9ca3af; }
-        .stat-box strong { font-size: 18px; color: #38bdf8; }
-        h2 { color: #38bdf8; font-size: 18px; margin-bottom: 15px; font-weight: 700; }
-        form { display: flex; gap: 10px; flex-wrap: wrap; }
-        input[type="text"] { flex: 1; min-width: 250px; background: #030712; border: 1px solid #374151; border-radius: 10px; padding: 12px 16px; color: #fff; font-size: 14px; outline: none; }
+        body { background-color: #0b0f19; color: #f3f4f6; padding: 15px; line-height: 1.5; }
+        .container { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 15px; }
+        .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+        h1 { color: #38bdf8; font-size: 22px; font-weight: 800; }
+        .stats-group { display: flex; gap: 10px; }
+        .stat-box { background: #1f2937; padding: 8px 14px; border-radius: 8px; text-align: center; border: 1px solid #374151; }
+        .stat-box span { display: block; font-size: 10px; color: #9ca3af; }
+        .stat-box strong { font-size: 16px; color: #38bdf8; }
+        h2 { color: #38bdf8; font-size: 16px; margin-bottom: 12px; font-weight: 700; }
+        .form-group { display: flex; flex-direction: column; gap: 10px; }
+        @media(min-width: 600px) {
+            .form-group { flex-direction: row; }
+        }
+        input[type="text"] { flex: 1; background: #030712; border: 1px solid #374151; border-radius: 8px; padding: 12px; color: #fff; font-size: 14px; outline: none; width: 100%; }
         input[type="text"]:focus { border-color: #38bdf8; }
-        button, .btn { background: #0284c7; color: white; border: none; padding: 12px 22px; border-radius: 10px; font-weight: bold; cursor: pointer; transition: background 0.2s; text-decoration: none; display: inline-block; text-align: center; font-size: 14px; }
+        button, .btn { background: #0284c7; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: background 0.2s; text-decoration: none; display: inline-block; text-align: center; font-size: 14px; white-space: nowrap; }
         button:hover, .btn:hover { background: #0369a1; }
-        .result-box { background: #030712; border: 1px solid rgba(56, 189, 248, 0.3); padding: 16px; border-radius: 10px; margin-top: 15px; word-break: break-all; }
-        .table-container { overflow-x: auto; margin-top: 15px; border: 1px solid #1f2937; border-radius: 10px; }
-        table { width: 100%; border-collapse: collapse; text-align: right; font-size: 13px; }
-        th { background: #030712; color: #9ca3af; padding: 12px; border-bottom: 1px solid #1f2937; }
-        td { padding: 12px; border-bottom: 1px solid #1f2937; color: #e5e7eb; white-space: nowrap; }
+        .result-box { background: #030712; border: 1px solid rgba(56, 189, 248, 0.3); padding: 14px; border-radius: 8px; margin-top: 12px; word-break: break-all; }
+        .table-container { overflow-x: auto; margin-top: 12px; border: 1px solid #1f2937; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; text-align: right; font-size: 12px; min-width: 600px; }
+        th { background: #030712; color: #9ca3af; padding: 10px; border-bottom: 1px solid #1f2937; }
+        td { padding: 10px; border-bottom: 1px solid #1f2937; color: #e5e7eb; }
         tr:hover { background: rgba(31, 41, 55, 0.4); }
-        .badge { background: #064e3b; color: #34d399; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #065f46; }
+        .badge { background: #064e3b; color: #34d399; padding: 3px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; border: 1px solid #065f46; }
         .ip-text { font-family: monospace; color: #38bdf8; font-weight: bold; }
-        .copy-btn { background: #374151; padding: 8px 14px; font-size: 12px; }
+        .copy-btn { background: #374151; padding: 10px 14px; font-size: 12px; }
         .copy-btn.success { background: #059669; }
-        .link-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+        .link-row { display: flex; gap: 8px; margin-top: 6px; }
     </style>
     <script>
         const urlParams = new URLSearchParams(window.location.search);
@@ -144,7 +145,7 @@ if (!empty($filter_code)) {
         function copyText(text, btnElement) {
             navigator.clipboard.writeText(text).then(() => {
                 const original = btnElement.innerText;
-                btnElement.innerText = "تم النسخ ✓";
+                btnElement.innerText = "تم ✓";
                 btnElement.classList.add("success");
                 setTimeout(() => {
                     btnElement.innerText = original;
@@ -157,11 +158,10 @@ if (!empty($filter_code)) {
 <body>
     <div class="container">
         
-        <!-- Header -->
         <div class="card header">
             <div>
                 <h1>Hello World from azez</h1>
-                <p style="color: #9ca3af; font-size: 13px; margin-top: 4px;">لوحة تحكم تتبع الروابط المتقدمة</p>
+                <p style="color: #9ca3af; font-size: 12px; margin-top: 2px;">لوحة تحكم تتبع الروابط</p>
             </div>
             <div class="stats-group">
                 <div class="stat-box">
@@ -175,8 +175,76 @@ if (!empty($filter_code)) {
             </div>
         </div>
 
-        <!-- Create Link -->
         <div class="card">
             <h2>🔗 إنشاء رابط تتبع جديد</h2>
-            <form method="POST">
-                <input type="text" name="target_url" placeholder="أدخل الرابط المستهدف (مثال: https://youtube.com)" required
+            <form method="POST" class="form-group">
+                <input type="text" name="target_url" placeholder="أدخل الرابط (مثال: youtube.com)" required>
+                <button type="submit" name="create">توليد الرابط</button>
+            </form>
+
+            <?php if (!empty($generated_link)): ?>
+                <div class="result-box">
+                    <span style="font-size: 11px; color: #9ca3af;">رابط التتبع النشط:</span>
+                    <div class="link-row">
+                        <input type="text" readonly value="<?php echo $generated_link; ?>">
+                        <button type="button" class="copy-btn" onclick="copyText('<?php echo $generated_link; ?>', this)">نسخ</button>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 11px;">
+                        <span>الكود: <strong style="color: #34d399;"><?php echo $tracking_code; ?></strong></span>
+                        <a href="/?track=<?php echo $tracking_code; ?>" style="color: #38bdf8; text-decoration: none;">إحصائيات هذا الرابط ←</a>
+                    </div>
+                </div>
+            <?php endif; ?>
+        </div>
+
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
+                <h2>📊 سجلات الزيارات الحية</h2>
+                <form method="GET" style="display: flex; gap: 5px; margin: 0; width: 100%; max-width: 300px;">
+                    <input type="text" name="track" placeholder="بحث بالكود..." value="<?php echo htmlspecialchars($filter_code); ?>" style="padding: 8px; font-size: 12px;">
+                    <button type="submit" style="padding: 8px 12px; font-size: 12px;">بحث</button>
+                    <?php if(!empty($filter_code)): ?>
+                        <a href="/" class="btn" style="background: #dc2626; padding: 8px 10px; font-size: 12px;">إلغاء</a>
+                    <?php endif; ?>
+                </form>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>الكود</th>
+                            <th>IP</th>
+                            <th>الدولة / المدينة</th>
+                            <th>مزود الخدمة</th>
+                            <th>الشاشة</th>
+                            <th>المتصفح</th>
+                            <th>الوقت</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($logs)): ?>
+                            <tr><td colspan="8" style="text-align: center; color: #6b7280; padding: 25px;">لا توجد أي زيارات مسجلة حتى الآن.</td></tr>
+                        <?php else: ?>
+                            <?php foreach ($logs as$log): ?>
+                            <tr>
+                                <td><?php echo $log['id']; ?></td>
+                                <td><span class="badge"><?php echo htmlspecialchars($log['code']); ?></span></td>
+                                <td class="ip-text"><?php echo htmlspecialchars($log['ip']); ?></td>
+                                <td><strong><?php echo htmlspecialchars($log['country']); ?></strong> / <?php echo htmlspecialchars($log['city']); ?></td>
+                                <td style="color: #9ca3af;"><?php echo htmlspecialchars($log['isp']); ?></td>
+                                <td><?php echo htmlspecialchars($log['screen_res']); ?></td>
+                                <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #9ca3af;" title="<?php echo htmlspecialchars($log['user_agent']); ?>"><?php echo htmlspecialchars($log['user_agent']); ?></td>
+                                <td style="color: #9ca3af; white-space: nowrap;"><?php echo $log['created_at']; ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+</body>
+</html>
