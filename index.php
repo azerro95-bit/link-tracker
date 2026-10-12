@@ -13,7 +13,7 @@ $db->exec("CREATE TABLE IF NOT EXISTS logs (
     country TEXT, 
     city TEXT, 
     isp TEXT, 
-    user_agent TEXT, 
+    device_info TEXT, 
     screen_res TEXT, 
     timezone TEXT, 
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -27,9 +27,36 @@ function get_real_ip() {
     return $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
 }
 
+// دالة لتحسين وتسمية مزודי الخدمة في الجزائر والعالم
+function parse_isp($isp_name) {
+    $isp_name = trim($isp_name);
+    if (stripos($isp_name, 'Mobilis') !== false \vert{}\vert{} stripos($isp_name, 'ATM') !== false) return 'موبيليس (Mobilis)';
+    if (stripos($isp_name, 'Djezzy') !== false \vert{}\vert{} stripos($isp_name, 'Optimum Telecom') !== false) return 'جازي (Djezzy)';
+    if (stripos($isp_name, 'Ooredoo') !== false \vert{}\vert{} stripos($isp_name, 'Wataniya') !== false) return 'أوريدو (Ooredoo)';
+    if (stripos($isp_name, 'Algérie Télécom') !== false || stripos($isp_name, 'Algerie Telecom') !== false \vert{}\vert{} stripos($isp_name, 'AT') !== false) return 'اتصالات الجزائر (Algérie Télécom)';
+    return $isp_name ?: 'غير معروف';
+}
+
+// دالة تحليل نوع الجهاز ونظام التشغيل من User Agent
+function get_device_type($ua) {
+    if (stripos($ua, 'Android') !== false) {
+        if (stripos($ua, 'Mobile') !== false) return 'هاتف أندرويد (Android Phone)';
+        return 'جهاز لوحي أندرويد (Android Tablet)';
+    } elseif (stripos($ua, 'iPhone') !== false) {
+        return 'آيفون (iPhone)';
+    } elseif (stripos($ua, 'iPad') !== false) {         return 'آيباد (iPad)';     } elseif (stripos($ua, 'Windows') !== false) {
+        return 'حهاز ويندوز (Windows PC)';
+    } elseif (stripos($ua, 'Macintosh') !== false \vert{}\vert{} stripos($ua, 'Mac OS') !== false) {
+        return 'حاسوب ماك (Mac)';
+    } elseif (stripos($ua, 'Linux') !== false) {
+        return 'نظام لينكس (Linux)';
+    }
+    return 'جهاز آخر (Unknown Device)';
+}
+
 function get_ip_details($ip) {
     if ($ip == '127.0.0.1' or $ip == '::1' or$ip == 'Unknown' or strpos($ip, '10.') === 0 or strpos($ip, '192.168.') === 0) {
-        return ['country' => 'محلي', 'city' => 'محلي', 'isp' => 'شبكة خاصة'];
+        return ['country' => 'الجزائر (محلي)', 'city' => 'شبكة محلية', 'isp' => 'محلي (Localhost)'];
     }
     $json = @file_get_contents("http://ip-api.com/json/" . $ip);
     $data = json_decode($json, true);
@@ -37,7 +64,7 @@ function get_ip_details($ip) {
         return [
             'country' => $data['country'] ?? 'غير معروف',
             'city' => $data['city'] ?? 'غير معروف',
-            'isp' => $data['isp'] ?? 'غير معروف'
+            'isp' => parse_isp($data['isp'] ?? '')
         ];
     }
     return ['country' => 'غير معروف', 'city' => 'غير معروف', 'isp' => 'غير معروف'];
@@ -52,11 +79,12 @@ if (isset($_GET['r'])) {
     if ($link) {$target = $link['target_url'];$ip = get_real_ip();
         $geo = get_ip_details($ip);
         $ua =$_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
+        $device = get_device_type($ua);
         $screen =$_GET['screen'] ?? 'N/A';
         $tz =$_GET['tz'] ?? 'N/A';
 
-        $logStmt =$db->prepare("INSERT INTO logs (code, ip, country, city, isp, user_agent, screen_res, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-        $logStmt->execute([$code,$ip, $geo['country'],$geo['city'], $geo['isp'],$ua, $screen,$tz]);
+        $logStmt =$db->prepare("INSERT INTO logs (code, ip, country, city, isp, device_info, screen_res, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+        $logStmt->execute([$code,$ip, $geo['country'],$geo['city'], $geo['isp'],$device, $screen,$tz]);
 
         header("Location: " . $target);
         exit();
@@ -102,7 +130,7 @@ if (!empty($filter_code)) {
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
         body { background-color: #0b0f19; color: #f3f4f6; padding: 15px; line-height: 1.5; }
-        .container { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 15px; }
+        .container { max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 15px; }
         .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
         .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
         h1 { color: #38bdf8; font-size: 22px; font-weight: 800; }
@@ -121,15 +149,15 @@ if (!empty($filter_code)) {
         button:hover, .btn:hover { background: #0369a1; }
         .result-box { background: #030712; border: 1px solid rgba(56, 189, 248, 0.3); padding: 14px; border-radius: 8px; margin-top: 12px; word-break: break-all; }
         .table-container { overflow-x: auto; margin-top: 12px; border: 1px solid #1f2937; border-radius: 8px; }
-        table { width: 100%; border-collapse: collapse; text-align: right; font-size: 12px; min-width: 600px; }
-        th { background: #030712; color: #9ca3af; padding: 10px; border-bottom: 1px solid #1f2937; }
-        td { padding: 10px; border-bottom: 1px solid #1f2937; color: #e5e7eb; }
+        table { width: 100%; border-collapse: collapse; text-align: right; font-size: 12px; min-width: 800px; }
+        th { background: #030712; color: #9ca3af; padding: 12px; border-bottom: 1px solid #1f2937; white-space: nowrap; }
+        td { padding: 12px; border-bottom: 1px solid #1f2937; color: #e5e7eb; white-space: nowrap; }
         tr:hover { background: rgba(31, 41, 55, 0.4); }
-        .badge { background: #064e3b; color: #34d399; padding: 3px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; border: 1px solid #065f46; }
-        .ip-text { font-family: monospace; color: #38bdf8; font-weight: bold; }
-        .copy-btn { background: #374151; padding: 10px 14px; font-size: 12px; }
+        .badge { background: #064e3b; color: #34d399; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #065f46; display: inline-flex; align-items: center; gap: 5px; }
+        .ip-text { font-family: monospace; color: #38bdf8; font-weight: bold; font-size: 13px; }
+        .copy-btn { background: #374151; padding: 6px 10px; font-size: 11px; border-radius: 4px; cursor: pointer; color: #fff; border: none; }
         .copy-btn.success { background: #059669; }
-        .link-row { display: flex; gap: 8px; margin-top: 6px; }
+        .link-row { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
     </style>
     <script>
         const urlParams = new URLSearchParams(window.location.search);
@@ -161,7 +189,7 @@ if (!empty($filter_code)) {
         <div class="card header">
             <div>
                 <h1>Hello World from azez</h1>
-                <p style="color: #9ca3af; font-size: 12px; margin-top: 2px;">لوحة تحكم تتبع الروابط</p>
+                <p style="color: #9ca3af; font-size: 12px; margin-top: 2px;">لوحة تحكم تتبع الروابط المتقدمة</p>
             </div>
             <div class="stats-group">
                 <div class="stat-box">
@@ -187,10 +215,13 @@ if (!empty($filter_code)) {
                     <span style="font-size: 11px; color: #9ca3af;">رابط التتبع النشط:</span>
                     <div class="link-row">
                         <input type="text" readonly value="<?php echo $generated_link; ?>">
-                        <button type="button" class="copy-btn" onclick="copyText('<?php echo $generated_link; ?>', this)">نسخ</button>
+                        <button type="button" class="copy-btn" style="padding: 10px 14px;" onclick="copyText('<?php echo $generated_link; ?>', this)">نسخ الرابط</button>
                     </div>
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 11px;">
-                        <span>الكود: <strong style="color: #34d399;"><?php echo $tracking_code; ?></strong></span>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 11px;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span>كود التتبع: <strong style="color: #34d399; font-size: 13px;"><?php echo $tracking_code; ?></strong></span>
+                            <button type="button" class="copy-btn" onclick="copyText('<?php echo $tracking_code; ?>', this)">نسخ الكود</button>
+                        </div>
                         <a href="/?track=<?php echo $tracking_code; ?>" style="color: #38bdf8; text-decoration: none;">إحصائيات هذا الرابط ←</a>
                     </div>
                 </div>
@@ -215,11 +246,11 @@ if (!empty($filter_code)) {
                         <tr>
                             <th>#</th>
                             <th>الكود</th>
-                            <th>IP</th>
+                            <th>عنوان IP</th>
                             <th>الدولة / المدينة</th>
-                            <th>مزود الخدمة</th>
+                            <th>مزود الخدمة (المتعامل)</th>
+                            <th>نوع الجهاز</th>
                             <th>الشاشة</th>
-                            <th>المتصفح</th>
                             <th>الوقت</th>
                         </tr>
                     </thead>
@@ -230,12 +261,17 @@ if (!empty($filter_code)) {
                             <?php foreach ($logs as$log): ?>
                             <tr>
                                 <td><?php echo $log['id']; ?></td>
-                                <td><span class="badge"><?php echo htmlspecialchars($log['code']); ?></span></td>
+                                <td>
+                                    <span class="badge">
+                                        <?php echo htmlspecialchars($log['code']); ?>
+                                        <button type="button" class="copy-btn" style="font-size: 9px; padding: 2px 5px;" onclick="copyText('<?php echo htmlspecialchars($log['code']); ?>', this)">نسخ</button>
+                                    </span>
+                                </td>
                                 <td class="ip-text"><?php echo htmlspecialchars($log['ip']); ?></td>
                                 <td><strong><?php echo htmlspecialchars($log['country']); ?></strong> / <?php echo htmlspecialchars($log['city']); ?></td>
-                                <td style="color: #9ca3af;"><?php echo htmlspecialchars($log['isp']); ?></td>
+                                <td><strong style="color: #38bdf8;"><?php echo htmlspecialchars($log['isp']); ?></strong></td>
+                                <td style="color: #34d399; font-weight: bold;"><?php echo htmlspecialchars($log['device_info']); ?></td>
                                 <td><?php echo htmlspecialchars($log['screen_res']); ?></td>
-                                <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #9ca3af;" title="<?php echo htmlspecialchars($log['user_agent']); ?>"><?php echo htmlspecialchars($log['user_agent']); ?></td>
                                 <td style="color: #9ca3af; white-space: nowrap;"><?php echo $log['created_at']; ?></td>
                             </tr>
                             <?php endforeach; ?>
