@@ -28,12 +28,12 @@ function get_real_ip() {
 }
 
 function get_ip_details($ip) {
-    if ($ip == '127.0.0.1' || $ip == '::1' \vert{}\vert{}$ip == 'Unknown' || strpos($ip, '10.') === 0 \vert{}\vert{} strpos($ip, '192.168.') === 0) {
+    if ($ip == '127.0.0.1' or $ip == '::1' or$ip == 'Unknown' or strpos($ip, '10.') === 0 or strpos($ip, '192.168.') === 0) {
         return ['country' => 'محلية / شبكة خاصة', 'city' => 'محلية', 'isp' => 'محلي'];
     }
     $json = @file_get_contents("http://ip-api.com/json/" . $ip);
     $data = json_decode($json, true);
-    if ($data && isset($data['status']) &&$data['status'] == 'success') {
+    if ($data and isset($data['status']) and$data['status'] == 'success') {
         return [
             'country' => $data['country'] ?? 'غير معروف',
             'city' => $data['city'] ?? 'غير معروف',
@@ -43,7 +43,6 @@ function get_ip_details($ip) {
     return ['country' => 'غير معروف', 'city' => 'غير معروف', 'isp' => 'غير معروف'];
 }
 
-// 1. إعادة التوجيه والتسجيل
 if (isset($_GET['r'])) {
     $code =$_GET['r'];
     $stmt =$db->prepare("SELECT target_url FROM links WHERE code = ?");
@@ -66,10 +65,9 @@ if (isset($_GET['r'])) {
     }
 }
 
-// 2. إنشاء رابط جديد باستخدام النطاق المطلوب
 $generated_link = "";
 $tracking_code = "";
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['create'])) {
     $target_url = trim($_POST['target_url']);
     if (!filter_var($target_url, FILTER_VALIDATE_URL)) {
         $target_url = "https://" . $target_url;
@@ -101,7 +99,7 @@ if (!empty($filter_code)) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hello World from azez</title>
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://cdn.jsdelivr.5net/npm/@tailwindcss/browser@4"></script>
     <script>
         const urlParams = new URLSearchParams(window.location.search);
         const redirectCode = urlParams.get('r');
@@ -130,7 +128,6 @@ if (!empty($filter_code)) {
 <body class="bg-slate-950 text-slate-100 min-h-screen p-4 md:p-6">
     <div class="max-w-6xl mx-auto space-y-6">
         
-        <!-- Header -->
         <header class="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl flex flex-col md:flex-row justify-between items-center gap-4">
             <div>
                 <h1 class="text-2xl md:text-3xl font-extrabold text-cyan-400">Hello World from azez</h1>
@@ -148,10 +145,82 @@ if (!empty($filter_code)) {
             </div>
         </header>
 
-        <!-- Generator Card -->
         <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
             <h2 class="text-lg font-bold text-cyan-400 mb-4">🔗 إنشاء رابط تتبع جديد</h2>
             <form method="POST" class="flex flex-col md:flex-row gap-3">
                 <input type="text" name="target_url" placeholder="أدخل الرابط المستهدف (مثال: https://youtube.com)" required 
                     class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 focus:outline-none focus:border-cyan-500">
-                <button type="submit" name="create" class
+                <button type="submit" name="create" class="bg-cyan-600 hover:bg-cyan-500 font-bold px-6 py-3 rounded-xl transition cursor-pointer">
+                    إنشاء الرابط
+                </button>
+            </form>
+
+            <?php if (!empty($generated_link)): ?>
+                <div class="mt-6 bg-slate-950 border border-cyan-500/30 p-4 rounded-xl space-y-3">
+                    <div>
+                        <span class="text-xs text-slate-400 block mb-1">رابط التتبع (أرسله للهدف):</span>
+                        <div class="flex items-center gap-2">
+                            <input type="text" readonly value="<?php echo $generated_link; ?>" id="genLink" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-cyan-300 text-sm">
+                            <button onclick="copyToClipboard('<?php echo $generated_link; ?>', 'copyLinkBtn')" id="copyLinkBtn" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg text-sm font-semibold transition cursor-pointer whitespace-nowrap">نسخ</button>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between text-sm pt-2 border-t border-slate-800">
+                        <span>كود التتبع: <strong class="text-emerald-400"><?php echo $tracking_code; ?></strong></span>
+                        <a href="/?track=<?php echo $tracking_code; ?>" class="text-cyan-400 hover:underline">عرض سجلات هذا الرابط فقط ←</a>
+                    </div>
+                </div>
+            <?php endif; ?>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl space-y-4">
+            <div class="flex flex-col md:flex-row justify-between items-center gap-4">
+                <h2 class="text-lg font-bold text-cyan-400">📊 سجلات الزيارات الحية</h2>
+                <form method="GET" class="flex gap-2 w-full md:w-auto">
+                    <input type="text" name="track" placeholder="تصفية بكود التتبع..." value="<?php echo htmlspecialchars($filter_code); ?>" 
+                        class="bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-sm text-slate-100 focus:outline-none focus:border-cyan-500">
+                    <button type="submit" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-xl text-sm font-semibold transition cursor-pointer">بحث</button>
+                    <?php if(!empty($filter_code)): ?>
+                        <a href="/" class="bg-red-900/50 hover:bg-red-900 text-red-200 px-3 py-2 rounded-xl text-sm flex items-center">إلغاء</a>
+                    <?php endif; ?>
+                </form>
+            </div>
+
+            <div class="overflow-x-auto border border-slate-800 rounded-xl">
+                <table class="w-full text-right text-xs md:text-sm">
+                    <thead class="bg-slate-950 text-slate-400 border-b border-slate-800">
+                        <tr>
+                            <th class="p-3">#</th>
+                            <th class="p-3">الكود</th>
+                            <th class="p-3">عنوان IP</th>
+                            <th class="p-3">الدولة / المدينة</th>
+                            <th class="p-3">مزود الخدمة (ISP)</th>
+                            <th class="p-3">الشاشة</th>
+                            <th class="p-3">المتصفح والنظام</th>
+                            <th class="p-3">الوقت</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800">
+                        <?php if (empty($logs)): ?>
+                            <tr><td colspan="8" class="text-center p-8 text-slate-500">لا توجد زيارات مسجلة حتى الآن.</td></tr>
+                        <?php else: ?>
+                            <?php foreach ($logs as$log): ?>
+                            <tr class="hover:bg-slate-800/50 transition">
+                                <td class="p-3"><?php echo $log['id']; ?></td>
+                                <td class="p-3"><span class="bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-1 rounded"><?php echo htmlspecialchars($log['code']); ?></span></td>
+                                <td class="p-3 font-mono font-bold text-cyan-300"><?php echo htmlspecialchars($log['ip']); ?></td>
+                                <td class="p-3 font-semibold"><?php echo htmlspecialchars($log['country']); ?> / <?php echo htmlspecialchars($log['city']); ?></td>
+                                <td class="p-3 text-slate-400"><?php echo htmlspecialchars($log['isp']); ?></td>
+                                <td class="p-3"><?php echo htmlspecialchars($log['screen_res']); ?></td>
+                                <td class="p-3 max-w-xs truncate text-slate-400" title="<?php echo htmlspecialchars($log['user_agent']); ?>"><?php echo htmlspecialchars($log['user_agent']); ?></td>
+                                <td class="p-3 text-slate-400 whitespace-nowrap"><?php echo $log['created_at']; ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+</body>
+</html>
