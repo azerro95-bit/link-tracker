@@ -101,4 +101,56 @@ if (isset($_GET['r'])) {
         $screen =$_GET['screen'] ?? 'غير متوفر';
         $tz =$_GET['tz'] ?? 'غير متوفر';
 
-        
+        $logStmt =$db->prepare("INSERT INTO logs (code, ip, country, city, lat, lon, isp, device_info, screen_res, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $logStmt->execute([$code,$ip, $geo['country'],$geo['city'], $geo['lat'],$geo['lon'], $geo['isp'],$device, $screen,$tz]);
+
+        header("Location: " . $target);
+        exit();
+    } else {
+        die("الرابط غير موجود.");
+    }
+}
+
+$generated_link = "";
+$tracking_code = "";
+if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['create'])) {
+    $target_url = trim($_POST['target_url']);
+    if (!filter_var($target_url, FILTER_VALIDATE_URL)) {
+        $target_url = "https://" . $target_url;
+    }
+
+    $code = substr(md5(uniqid(rand(), true)), 0, 7);
+    $stmt =$db->prepare("INSERT INTO links (code, target_url) VALUES (?, ?)");
+    $stmt->execute([$code,$target_url]);
+
+    $tracking_code =$code;
+    $domain = $_SERVER['HTTP_HOST'];$generated_link = "https://" . $domain . "/?r=" . $code;
+}
+
+$total_links =$db->query("SELECT COUNT(*) FROM links")->fetchColumn();
+$total_visits =$db->query("SELECT COUNT(*) FROM logs")->fetchColumn();
+
+$filter_code = trim($_GET['track'] ?? '');
+if (!empty($filter_code)) {
+    $stmt =$db->prepare("SELECT * FROM logs WHERE code = ? ORDER BY id DESC");
+    $stmt->execute([$filter_code]);
+    $logs =$stmt->fetchAll(PDO::FETCH_ASSOC);
+} else {
+    $logs =$db->query("SELECT * FROM logs ORDER BY id DESC LIMIT 50")->fetchAll(PDO::FETCH_ASSOC);
+}
+?>
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hello World from azez</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+        body { background-color: #0b0f19; color: #f3f4f6; padding: 15px; line-height: 1.5; }
+        .container { max-width: 1050px; margin: 0 auto; display: flex; flex-direction: column; gap: 15px; }
+        .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+        h1 { color: #38bdf8; font-size: 22px; font-weight: 800; }
+        .stats-group { display: flex; gap: 10px; }
+        .stat-box { background: #1f2937; padding: 8px
