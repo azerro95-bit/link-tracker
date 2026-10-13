@@ -165,4 +165,38 @@ if (!isset($_SESSION['logged_in']) or$_SESSION['logged_in'] !== true):
         input:focus { border-color: #38bdf8; }
         button { background: #0284c7; color: white; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: background 0.2s; font-size: 15px; width: 100%; }
         button:hover { background: #0369a1; }
-        .error { background: #7f1d1d; color: #fca5a5; padding: 10px; border-radius: 6px
+        .error { background: #7f1d1d; color: #fca5a5; padding: 10px; border-radius: 6px; font-size: 13px; margin-bottom: 15px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h2>🔒 تسجيل الدخول للوحة التحكم</h2>
+        <?php if (isset($login_error)): ?>
+            <div class="error"><?php echo $login_error; ?></div>
+        <?php endif; ?>
+        <form method="POST">
+            <div class="form-group">
+                <input type="text" name="username" placeholder="اسم المستخدم" required>
+                <input type="password" name="password" placeholder="كلمة المرور" required>
+                <button type="submit" name="login">دخول</button>
+            </div>
+        </form>
+    </div>
+</body>
+</html>
+<?php
+exit();
+endif;
+
+$generated_link = "";
+$tracking_code = "";
+if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['create'])) {
+    $target_url = trim($_POST['target_url']);
+    $preview_title = trim($_POST['preview_title']);
+    $preview_image = trim($_POST['preview_image']);
+    
+    if (!filter_var($target_url, FILTER_VALIDATE_URL)) {
+        $target_url = "https://" . $target_url;
+    }
+
+    $code = substr(md5
