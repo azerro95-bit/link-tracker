@@ -57,13 +57,15 @@ function get_real_ip() {
 }
 
 function parse_isp($isp_name, $org_name) {$combined = $isp_name . ' ' .$org_name;
-    if (stripos($combined, 'Mobilis') !== false or stripos($combined, 'ATM') !== false) return 'موبيليس (Mobilis)';
-    if (stripos($combined, 'Djezzy') !== false or stripos($combined, 'Optimum Telecom') !== false) return 'جازي (Djezzy)';
-    if (stripos($combined, 'Ooredoo') !== false or stripos($combined, 'Wataniya') !== false) return 'أوريدو (Ooredoo)';
-    if (stripos($combined, 'Algérie Télécom') !== false or stripos($combined, 'Algerie Telecom') !== false or stripos($combined, 'AT') !== false) return 'اتصالات الجزائر (Algérie Télécom)';
+    if (stripos($combined, 'Mobilis') !== false \vert{}\vert{} stripos($combined, 'ATM') !== false) return 'موبيليس (Mobilis)';
+    if (stripos($combined, 'Djezzy') !== false \vert{}\vert{} stripos($combined, 'Optimum Telecom') !== false) return 'جازي (Djezzy)';
+    if (stripos($combined, 'Ooredoo') !== false \vert{}\vert{} stripos($combined, 'Wataniya') !== false) return 'أوريدو (Ooredoo)';
+    if (stripos($combined, 'Algérie Télécom') !== false || stripos($combined, 'Algerie Telecom') !== false \vert{}\vert{} stripos($combined, 'AT') !== false) return 'اتصالات الجزائر (Algérie Télécom)';
     return trim($isp_name) ?: 'شبكة غير معروفة';
 }
 
 function get_device_type($ua) {$brand = 'جهاز ذكي';
     if (stripos($ua, 'Samsung') !== false)$brand = 'سامسونج (Samsung)';
+    elseif (stripos($ua, 'iPhone') !== false)$brand = 'آيفون (iPhone)';
+    elseif (stripos($ua, 'Huawei') !== false)$brand = 'هواوي (Huawei)';
     elseif (
