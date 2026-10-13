@@ -1,4 +1,3 @@
-<?>
 <?php
 // ضبط المنطقة الزمنية للجزائر بدقة
 date_default_timezone_set('Africa/Algiers');
