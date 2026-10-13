@@ -3,16 +3,6 @@
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-session_start();
-// بيانات الحساب المخصصة لك
-$admin_user = "SCLC USER";
-$admin_pass = "aziz2000";
-
-<?php
-// إظهار الأخطاء للتحقق والتأكد من العمل
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
-
 try {
     $db = new PDO('sqlite:tracker.db');$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
