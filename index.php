@@ -7,6 +7,7 @@ session_start();
 // بيانات الحساب المخصصة لك
 $admin_user = "SCLC USER";
 $admin_pass = "aziz2000";
+
 <?php
 // إظهار الأخطاء للتحقق والتأكد من العمل
 ini_set('display_errors', 1);
