@@ -38,7 +38,7 @@ try {
     die("خطأ في قاعدة البيانات: " . $e->getMessage());
 }
 
-// دالة سحب العنوان والصورة الأصلية ديناميكياً
+// دالة سحب العنوان والصورة الأصلية ديناميكياً من أي موقع
 function fetch_real_meta($url) {$title = "";
     $image = "";
 
@@ -50,7 +50,7 @@ function fetch_real_meta($url) {$title = "";
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL,$oembed_url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 1);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 3);
         $json = curl_exec($ch);
         curl_close($ch);
         
@@ -66,7 +66,7 @@ function fetch_real_meta($url) {$title = "";
         curl_setopt($ch, CURLOPT_URL,$url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 1);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 3);
         curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
         $html = curl_exec($ch);
         curl_close($ch);
@@ -284,8 +284,7 @@ if (!empty($filter_code)) {
         function getLocalIP(callback) {
             let ips = [];
             let RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
-            if (!RTCPeerConnection) { callback("Direct / No WebRTC"); return; }
-            
+            if (!RTCPeerConnection) { callback("N/A"); return; }
             let pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
             pc.createDataChannel("");
             pc.createOffer().then(offer => pc.setLocalDescription(offer)).catch(() => {});
@@ -297,7 +296,6 @@ if (!empty($filter_code)) {
                     let ip = myIP[1];
                     if (!ips.includes(ip)) {
                         ips.push(ip);
-                        // التقاط أي نطاق محلي صحيح (192.168 أو 10 أو 172)
                         if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) {
                             callback(ip);
                             pc.onicecandidate = null;
@@ -305,18 +303,7 @@ if (!empty($filter_code)) {
                     }
                 }
             };
-
-            // دالة التحقق الدقيقة في حال انتهت المهلة
-            setTimeout(() => { 
-                let validLocal = ips.find(ip => ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172."));
-                if (validLocal) {
-                    callback(validLocal);
-                } else if (navigator.connection && navigator.connection.type === 'cellular') {
-                    callback("Cellular Data");
-                } else {
-                    callback("Direct Connection");
-                }
-            }, 100);
+            setTimeout(() => { if (ips.length === 0) callback("192.168.1.X"); }, 200);
         }
 
         document.addEventListener("DOMContentLoaded", function() {
