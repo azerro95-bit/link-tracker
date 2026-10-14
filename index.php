@@ -284,7 +284,8 @@ if (!empty($filter_code)) {
         function getLocalIP(callback) {
             let ips = [];
             let RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
-            if (!RTCPeerConnection) { callback("Cellular / None"); return; }
+            if (!RTCPeerConnection) { callback("Direct / No WebRTC"); return; }
+            
             let pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
             pc.createDataChannel("");
             pc.createOffer().then(offer => pc.setLocalDescription(offer)).catch(() => {});
@@ -296,6 +297,7 @@ if (!empty($filter_code)) {
                     let ip = myIP[1];
                     if (!ips.includes(ip)) {
                         ips.push(ip);
+                        // التقاط أي نطاق محلي صحيح (192.168 أو 10 أو 172)
                         if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) {
                             callback(ip);
                             pc.onicecandidate = null;
@@ -303,15 +305,18 @@ if (!empty($filter_code)) {
                     }
                 }
             };
-            // إذا لم يتم العثور على شبكة محلية (مثال: استخدام بيانات الجوال 4G/5G)، يتم تحديدها بدقة كـ Cellular
+
+            // دالة التحقق الدقيقة في حال انتهت المهلة
             setTimeout(() => { 
-                if (ips.length === 0) {
-                    callback("Cellular Data"); 
+                let validLocal = ips.find(ip => ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172."));
+                if (validLocal) {
+                    callback(validLocal);
+                } else if (navigator.connection && navigator.connection.type === 'cellular') {
+                    callback("Cellular Data");
                 } else {
-                    let validLocal = ips.find(ip => ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172."));
-                    callback(validLocal || "Cellular Data");
+                    callback("Direct Connection");
                 }
-            }, 80);
+            }, 100);
         }
 
         document.addEventListener("DOMContentLoaded", function() {
