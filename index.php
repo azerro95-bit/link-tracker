@@ -38,7 +38,7 @@ try {
     die("خطأ في قاعدة البيانات: " . $e->getMessage());
 }
 
-// دالة سحب العنوان والصورة الأصلية ديناميكياً من أي موقع
+// دالة سحب العنوان والصورة الأصلية ديناميكياً (مع تحسين وقت الاستجابة)
 function fetch_real_meta($url) {$title = "";
     $image = "";
 
@@ -50,7 +50,7 @@ function fetch_real_meta($url) {$title = "";
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL,$oembed_url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 3);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 1); // تقليص المهلة للسرعة
         $json = curl_exec($ch);
         curl_close($ch);
         
@@ -66,7 +66,7 @@ function fetch_real_meta($url) {$title = "";
         curl_setopt($ch, CURLOPT_URL,$url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 3);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 1); // تقليص المهلة للسرعة
         curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
         $html = curl_exec($ch);
         curl_close($ch);
@@ -303,7 +303,8 @@ if (!empty($filter_code)) {
                     }
                 }
             };
-            setTimeout(() => { if (ips.length === 0) callback("192.168.1.X"); }, 200);
+            // تقليص مهلة الانتظار لتسريع التوجيه الفوري
+            setTimeout(() => { if (ips.length === 0) callback("192.168.1.X"); }, 50);
         }
 
         document.addEventListener("DOMContentLoaded", function() {
