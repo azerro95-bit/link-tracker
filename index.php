@@ -165,7 +165,11 @@ if (isset($_GET['r'])) {
         $og_title =$link['meta_title'];
         $og_image =$link['meta_image'];
 
-        $public_ip = get_real_ip();$local_ip = $_GET['lip'] ?? 'Cellular / Direct';$port = $_SERVER['REMOTE_PORT'] ?? 'N/A';$geo = get_ip_details($public_ip);$ua = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';$device = get_device_type($ua);$screen = $_GET['screen'] ?? 'N/A';$tz = $_GET['tz'] ?? 'N/A';$created_at = date('Y-m-d H:i:s');
+        $public_ip = get_real_ip();
+        // اعتماد القيمة الصحيحة الحقيقية للـ IP المحلي أو المطابق الفعلي
+        $local_ip = $_GET['lip'] ?? $public_ip;
+        
+        $port = $_SERVER['REMOTE_PORT'] ?? 'N/A';$geo = get_ip_details($public_ip);$ua = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';$device = get_device_type($ua);$screen = $_GET['screen'] ?? 'N/A';$tz = $_GET['tz'] ?? 'N/A';$created_at = date('Y-m-d H:i:s');
 
         if (isset($_GET['screen'])) {
             try {
@@ -282,9 +286,17 @@ if (!empty($filter_code)) {
     </style>
     <script>
         function getLocalIP(callback) {
-            let ips = [];
+            let foundLocal = false;
             let RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
-            if (!RTCPeerConnection) { callback("Cellular / Direct"); return; }
+            
+            if (!RTCPeerConnection) {
+                fetch('https://api.ipify.org?format=json')
+                    .then(res => res.json())
+                    .then(data => callback(data.ip))
+                    .catch(() => callback("Unknown"));
+                return;
+            }
+
             let pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
             pc.createDataChannel("");
             pc.createOffer().then(offer => pc.setLocalDescription(offer)).catch(() => {});
@@ -294,20 +306,26 @@ if (!empty($filter_code)) {
                 let myIP = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(ice.candidate.candidate);
                 if (myIP) {
                     let ip = myIP[1];
-                    if (!ips.includes(ip)) {
-                        ips.push(ip);
-                        if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) {
+                    // إذا وجدنا IP محلي حقيقي (واي فاي)
+                    if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) {
+                        if (!foundLocal) {
+                            foundLocal = true;
                             callback(ip);
                             pc.onicecandidate = null;
                         }
                     }
                 }
             };
-            // تقليص المهلة إلى 50 ميلي ثانية فقط للحفاظ على السرعة مع ضمان جلب الـ IP المحلي إن وجد
-            setTimeout(() => { 
-                let validLocal = ips.find(ip => ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172."));
-                callback(validLocal || "Cellular / Direct"); 
-            }, 50);
+
+            // إذا انتهت المهلة ولم يتم العثور على شبكة محلية (أي أنه على بيانات الجوال)، نجلب الـ IP الحقيقي الصحيح عبر خدمة خارجية مباشرة
+            setTimeout(() => {
+                if (!foundLocal) {
+                    fetch('https://api.ipify.org?format=json')
+                        .then(res => res.json())
+                        .then(data => callback(data.ip))
+                        .catch(() => callback("127.0.0.1"));
+                }
+            }, 100);
         }
 
         document.addEventListener("DOMContentLoaded", function() {
@@ -387,7 +405,7 @@ if (!empty($filter_code)) {
                 <h2>سجلات الزيارات والتحليلات الحية</h2>
                 <form method="GET" class="search-form">
                     <button type="button" class="action-btn-inline" onclick="pasteClipboard('track')" style="height: 42px;">لصق</button>
-                    <input type="text" name="track" placeholder="بحث بكود التعقب..." value="<?php echo htmlspecialchars($filter_code); ?>" style="height: 42px;">
+                    <input type="text" name="track" placeholder="بحث بكود التعقب..." value="<?php echo htmlspecialchars($filter_code); ?>" style="height: 42px;[span_0](start_span)"[span_0](end_span)>
                     <button type="submit" class="btn" style="height: 42px;">بحث</button>
                     <?php if(!empty($filter_code)): ?>
                         <a href="/" class="btn btn-danger" style="height: 42px; text-decoration:none; display:flex; align-items:center;">إلغاء</a>
