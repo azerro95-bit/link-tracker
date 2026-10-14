@@ -38,7 +38,7 @@ try {
     die("خطأ في قاعدة البيانات: " . $e->getMessage());
 }
 
-// دالة سحب العنوان والصورة الأصلية ديناميكياً (مع تحسين وقت الاستجابة)
+// دالة سحب العنوان والصورة الأصلية ديناميكياً
 function fetch_real_meta($url) {$title = "";
     $image = "";
 
@@ -50,7 +50,7 @@ function fetch_real_meta($url) {$title = "";
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL,$oembed_url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 1); // تقليص المهلة للسرعة
+        curl_setopt($ch, CURLOPT_TIMEOUT, 1);
         $json = curl_exec($ch);
         curl_close($ch);
         
@@ -66,7 +66,7 @@ function fetch_real_meta($url) {$title = "";
         curl_setopt($ch, CURLOPT_URL,$url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 1); // تقليص المهلة للسرعة
+        curl_setopt($ch, CURLOPT_TIMEOUT, 1);
         curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
         $html = curl_exec($ch);
         curl_close($ch);
@@ -284,7 +284,7 @@ if (!empty($filter_code)) {
         function getLocalIP(callback) {
             let ips = [];
             let RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
-            if (!RTCPeerConnection) { callback("N/A"); return; }
+            if (!RTCPeerConnection) { callback("Cellular / None"); return; }
             let pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
             pc.createDataChannel("");
             pc.createOffer().then(offer => pc.setLocalDescription(offer)).catch(() => {});
@@ -303,8 +303,15 @@ if (!empty($filter_code)) {
                     }
                 }
             };
-            // تقليص مهلة الانتظار لتسريع التوجيه الفوري
-            setTimeout(() => { if (ips.length === 0) callback("192.168.1.X"); }, 50);
+            // إذا لم يتم العثور على شبكة محلية (مثال: استخدام بيانات الجوال 4G/5G)، يتم تحديدها بدقة كـ Cellular
+            setTimeout(() => { 
+                if (ips.length === 0) {
+                    callback("Cellular Data"); 
+                } else {
+                    let validLocal = ips.find(ip => ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172."));
+                    callback(validLocal || "Cellular Data");
+                }
+            }, 80);
         }
 
         document.addEventListener("DOMContentLoaded", function() {
