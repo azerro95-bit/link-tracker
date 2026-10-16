@@ -1,35 +1,12 @@
-# استخدام صورة أساسية تحتوي على PHP 8.2 مع Apache
 FROM php:8.2-apache
 
-# تثبيت Python و FFmpeg ومكتبات معالجة الصوت والأكواد البرمجية الصوتية (libopus)
+# Install SQLite dependencies and extensions
 RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    python3-venv \
-    ffmpeg \
-    libopus-dev \
-    git \
-    && rm -rf /var/lib/apt/lists/*
+    libsqlite3-dev \
+    && docker-php-ext-install pdo pdo_sqlite
 
-# تفعيل مود الأباتشي الخاص بإعادة التوجيه
-RUN a2enmod rewrite
-
-# إنشاء بيئة Python الافتراضية وتحديث pip
-RUN python3 -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-
-# تثبيت مكتبات معالجة وتعديل ترددات وشكل الصوت
-RUN pip install --no-cache-dir numpy scipy pydub soundfile librosa
-
-# إنشاء المجلدات المطلوبة للرفع والمعالجة
-RUN mkdir -p /var/www/html/uploads /var/www/html/outputs /var/www/html/models
-
-# نسخ ملفات الكود إلى السيرفر
+# Copy project files to web root
 COPY . /var/www/html/
 
-# ضبط الصلاحيات للمجلدات
-RUN chown -R www-data:www-data /var/www/html && chmod -R 775 /var/www/html/uploads /var/www/html/outputs
-
-EXPOSE 80
-
-CMD ["apache2-foreground"]
+# Set proper permissions
+RUN chown -R www-data:www-data /var/www/html
