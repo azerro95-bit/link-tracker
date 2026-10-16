@@ -1,33 +1,35 @@
-# استخدام صورة أساسية تحتوي على PHP مع Apache
+# استخدام صورة أساسية تحتوي على PHP 8.2 مع Apache
 FROM php:8.2-apache
 
-# تثبيت Python ومكتبات النظام الضرورية (مثل ffmpeg لمعالجة الصوت)
+# تثبيت Python و FFmpeg ومكتبات معالجة الصوت والأكواد البرمجية الصوتية (libopus)
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     python3-venv \
     ffmpeg \
+    libopus-dev \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# تفعيل مودات أباتشي المهمة
+# تفعيل مود الأباتشي الخاص بإعادة التوجيه
 RUN a2enmod rewrite
 
-# إنشاء بيئة افتراضية لـ Python لتثبيت المكتبات بأمان
+# إنشاء بيئة Python الافتراضية وتحديث pip
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# ترقية pip وتثبيت مكتبات بايثون الأساسية (يمكنك إضافة مكتبات RVC أو الصوت لاحقاً)
-RUN pip install --no-cache-dir numpy scipy pydub requests
+# تثبيت مكتبات معالجة وتعديل ترددات وشكل الصوت
+RUN pip install --no-cache-dir numpy scipy pydub soundfile librosa
 
-# نسخ ملفات المشروع إلى مسار العمل في الأباتشي
+# إنشاء المجلدات المطلوبة للرفع والمعالجة
+RUN mkdir -p /var/www/html/uploads /var/www/html/outputs /var/www/html/models
+
+# نسخ ملفات الكود إلى السيرفر
 COPY . /var/www/html/
 
-# ضبط الصلاحيات
-RUN chown -R www-data:www-data /var/www/html
+# ضبط الصلاحيات للمجلدات
+RUN chown -R www-data:www-data /var/www/html && chmod -R 775 /var/www/html/uploads /var/www/html/outputs
 
-# تعيين المنفذ الافتراضي لـ Render
 EXPOSE 80
 
-# أمر التشغيل (تشغيل Apache في الواجهة الأمامية)
 CMD ["apache2-foreground"]
