@@ -27,45 +27,52 @@
             <div class="absolute -top-24 -right-24 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl"></div>
             
             <div class="text-center mb-8">
-                <h2 class="text-2xl font-extrabold text-white mb-2">حول صوتك إلى صوت طبيعي 100%</h2>
-                <p class="text-slate-400 text-sm">بنبرة جزائرية أصيلة وبأعلى جودة ممكنة عبر الذكاء الاصطناعي.</p>
+                <h2 class="text-2xl font-extrabold text-white mb-2">سجل صوتك مباشرة وحوله لنبرة جزائرية طبيعية</h2>
+                <p class="text-slate-400 text-sm">تكلم بالميكروفون مباشرة، ودع الذكاء الاصطناعي يقوم بالباقي.</p>
             </div>
 
-            <!-- نموذج الرفع أو التسجيل -->
-            <form id="audioForm" class="space-y-6" enctype="multipart/form-data">
-                <!-- اختيار الملف أو التسجيل -->
-                <div class="border-2 border-dashed border-slate-700 hover:border-emerald-500 transition rounded-xl p-6 text-center cursor-pointer bg-slate-950/50">
-                    <input type="file" id="audioFile" name="audio" accept="audio/*" class="hidden">
-                    <label for="audioFile" class="cursor-pointer block">
-                        <i class="fa-solid fa-cloud-arrow-up text-4xl text-emerald-400 mb-3"></i>
-                        <p class="text-sm font-medium text-slate-300">اضغط لرفع ملف صوتي أو اسحبه هنا</p>
-                        <p class="text-xs text-slate-500 mt-1">MP3, WAV, OGG (الحد الأقصى 10 ميجابايت)</p>
-                    </label>
+            <!-- قسم التسجيل المباشر -->
+            <div class="space-y-6">
+                <!-- أزرار التحكم بالتسجيل -->
+                <div class="bg-slate-950/50 border border-slate-800 rounded-xl p-6 text-center">
+                    <div id="recordingStatus" class="text-sm font-medium text-slate-400 mb-4">اضغط على زر التسجيل وابدأ الكلام</div>
+                    
+                    <div class="flex justify-center items-center gap-4">
+                        <button id="recordBtn" onclick="toggleRecording()" class="w-16 h-16 bg-rose-600 hover:bg-rose-500 text-white rounded-full flex items-center justify-center shadow-lg transition transform hover:scale-105">
+                            <i id="recordIcon" class="fa-solid fa-microphone text-2xl"></i>
+                        </button>
+                    </div>
+                    
+                    <!-- مشغل الصوت بعد التسجيل -->
+                    <div id="audioPreviewContainer" class="hidden mt-4">
+                        <p class="text-xs text-emerald-400 mb-2">استمع لصوتك قبل الإرسال:</p>
+                        <audio id="audioPreview" controls class="w-full"></audio>
+                    </div>
                 </div>
 
                 <!-- خيارات التحويل -->
                 <div>
-                    <label class="block text-sm font-medium text-slate-300 mb-2">اختر النموذج المستهدف:</label>
-                    <select class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-emerald-500 transition">
-                        <option value="algerian_girl_1">صوت فتاة جزائرية (طبيعي وناعم)</option>
+                    <label class="block text-sm font-medium text-slate-300 mb-2">اختر النبرة المستهدفة:</label>
+                    <select id="voiceModel" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-emerald-500 transition">
+                        <option value="algerian_girl_1">صوت فتاة جزائرية (ناعم وطبيعي)</option>
                         <option value="algerian_girl_2">صوت فتاة جزائرية (حماسي)</option>
                     </select>
                 </div>
 
-                <!-- زر التحويل -->
-                <button type="submit" class="w-full bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 font-bold py-3.5 px-6 rounded-xl shadow-lg hover:opacity-90 transition flex items-center justify-center gap-2">
-                    <i class="fa-solid fa-wand-magic-sparkles"></i> بدء تحويل الصوت الآن
+                <!-- زر الإرسال والمعالجة -->
+                <button id="processBtn" onclick="processAudio()" disabled class="w-full bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 font-bold py-3.5 px-6 rounded-xl shadow-lg opacity-55 cursor-not-allowed transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> معالجة وتغيير الصوت الآن
                 </button>
-            </form>
+            </div>
 
             <!-- منطقة النتيجة والتحميل / المشاركة -->
             <div id="resultSection" class="hidden mt-8 p-4 bg-slate-950 rounded-xl border border-slate-800">
                 <h3 class="text-sm font-semibold text-emerald-400 mb-3 flex items-center gap-2">
-                    <i class="fa-solid fa-circle-check"></i> تم التحويل بنجاح!
+                    <i class="fa-solid fa-circle-check"></i> تم تحويل الصوت بنجاح!
                 </h3>
                 <audio id="outputAudio" controls class="w-full mb-4"></audio>
                 <div class="flex gap-3">
-                    <a id="downloadBtn" href="#" class="flex-1 bg-slate-800 hover:bg-slate-700 text-center py-2.5 rounded-lg text-sm font-medium transition">
+                    <a id="downloadBtn" href="#" class="flex-1 bg-slate-800 hover:bg-slate-700 text-center py-2.5 rounded-lg text-sm font-medium transition text-white">
                         <i class="fa-solid fa-download ml-1"></i> تحميل المقطع
                     </a>
                     <button onclick="shareToMessenger()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-center py-2.5 rounded-lg text-sm font-medium transition text-white">
@@ -81,23 +88,98 @@
         powred by azeez
     </footer>
 
+    <!-- أكواد جافاسكريبت للتحكم بالميكروفون والتسجيل -->
     <script>
-        document.getElementById('audioForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            // محاكاة عملية التحويل (سيتم ربطها بسكربت البايثون لاحقاً)
-            alert('جاري معالجة الصوت بالذكاء الاصطناعي...');
-        });
+        let mediaRecorder;
+        let audioChunks = [];
+        let recordedBlob = null;
+        let isRecording = false;
+
+        async function toggleRecording() {
+            const recordBtn = document.getElementById('recordBtn');
+            const recordIcon = document.getElementById('recordIcon');
+            const recordingStatus = document.getElementById('recordingStatus');
+            const audioPreviewContainer = document.getElementById('audioPreviewContainer');
+            const processBtn = document.getElementById('processBtn');
+
+            if (!isRecording) {
+                // بدء التسجيل
+                try {
+                    audioChunks = [];
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    
+                    mediaRecorder.ondataavailable = event => {
+                        audioChunks.push(event.data);
+                    };
+
+                    mediaRecorder.onstop = () => {
+                        recordedBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        const audioUrl = URL.createObjectURL(recordedBlob);
+                        const audioPreview = document.getElementById('audioPreview');
+                        audioPreview.src = audioUrl;
+                        audioPreviewContainer.classList.remove('hidden');
+                        
+                        // تفعيل زر المعالجة
+                        processBtn.disabled = false;
+                        processBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    };
+
+                    mediaRecorder.start();
+                    isRecording = true;
+                    recordBtn.classList.remove('bg-rose-600', 'hover:bg-rose-500');
+                    recordBtn.classList.add('bg-amber-600', 'hover:bg-amber-500', 'animate-pulse');
+                    recordIcon.className = "fa-solid fa-stop text-2xl";
+                    recordingStatus.textContent = "جاري التسجيل... انقر للإيقاف";
+                    audioPreviewContainer.classList.add('hidden');
+                    processBtn.disabled = true;
+                    processBtn.classList.add('opacity-50', 'cursor-not-allowed');
+
+                } catch (err) {
+                    alert('تعذر الوصول إلى الميكروفون. يرجى السماح للمتصفح بالاستخدام.');
+                    console.error(err);
+                }
+            } else {
+                // إيقاف التسجيل
+                mediaRecorder.stop();
+                // إيقاف استخدام الميكروفون الفعلي
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                
+                isRecording = false;
+                recordBtn.classList.remove('bg-amber-600', 'hover:bg-amber-500', 'animate-pulse');
+                recordBtn.classList.add('bg-rose-600', 'hover:bg-rose-500');
+                recordIcon.className = "fa-solid fa-microphone text-2xl";
+                recordingStatus.textContent = "تم التسجيل بنجاح! يمكنك الاستماع أو معالجة الصوت";
+            }
+        }
+
+        function processAudio() {
+            if (!recordedBlob) return;
+
+            const processBtn = document.getElementById('processBtn');
+            processBtn.textContent = "جاري معالجة الصوت بالذكاء الاصطناعي...";
+            processBtn.disabled = true;
+
+            // محاكاة الإرسال للخادم (سيتم ربطها بـ Backend قريباً)
+            setTimeout(() => {
+                document.getElementById('resultSection').classList.remove('hidden');
+                document.getElementById('outputAudio').src = URL.createObjectURL(recordedBlob);
+                document.getElementById('downloadBtn').href = URL.createObjectURL(recordedBlob);
+                
+                processBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> معالجة وتغيير الصوت الآن';
+                processBtn.disabled = false;
+            }, 2000);
+        }
 
         function shareToMessenger() {
-            // استخدام Web Share API أو رابط Deep Link لماسنجر
             if (navigator.share) {
                 navigator.share({
-                    title: 'صوتي المعدل',
-                    text: 'اسمع هذا الصوت المحول بالذكاء الاصطناعي!',
+                    title: 'صوتي المحول',
+                    text: 'اسمع هذا الصوت عبر تطبيق الذكاء الاصطناعي!',
                     url: window.location.href,
                 }).catch(console.error);
             } else {
-                alert('عذراً، خاصية المشاركة المباشرة غير مدعومة في متصفحك، يمكنك تحميل الملف وإرساله يدوياً.');
+                alert('خاصية المشاركة المباشرة تتطلب متصفح هاتف يدعم Web Share API.');
             }
         }
     </script>
